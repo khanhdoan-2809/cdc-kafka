@@ -32,7 +32,7 @@ jobs:
         run: chmod +x mvnw
 
       - name: Verify
-        run: ./mvnw clean verify
+        run: ./mvnw -B clean verify
 
   smoke-test:
     runs-on: ubuntu-latest

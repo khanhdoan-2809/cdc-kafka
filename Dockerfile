@@ -8,7 +8,7 @@ RUN mvn -B clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
-COPY --from=build /build/target/*.jar app.jar
+COPY --from=builder /build/target/*.jar app.jar
 USER spring
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \

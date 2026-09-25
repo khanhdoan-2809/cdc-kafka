@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: transport-postgres
+    environment:
+      POSTGRES_DB: transport
+      POSTGRES_USER: transport
+      POSTGRES_PASSWORD: transport
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transport -d transport"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  transport-service:
+    build:
+      context: .
+    container_name: transport-service
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: transport
+      DB_USERNAME: transport
+      DB_PASSWORD: transport
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

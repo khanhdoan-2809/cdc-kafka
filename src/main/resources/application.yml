@@ -1,6 +1,6 @@
 spring:
   application:
-    name: transport-service
+    name: transport
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transport}
@@ -17,6 +17,9 @@ spring:
 
   flyway:
     enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transport}
+    user: ${DB_USERNAME:transport}
+    password: ${DB_PASSWORD:transport}
 
 server:
   port: ${SERVER_PORT:8080}

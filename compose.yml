@@ -16,10 +16,10 @@ services:
       timeout: 5s
       retries: 10
 
-  transport-service:
+  transport:
     build:
       context: .
-    container_name: transport-service
+    container_name: transport
     environment:
       DB_HOST: postgres
       DB_PORT: 5432

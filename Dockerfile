@@ -10,13 +10,19 @@ RUN ./mvnw -B dependency:go-offline
 COPY src ./src
 RUN ./mvnw -B clean package -DskipTests
 
+## ==================================================
+
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN groupadd --system spring && \
     useradd --system --gid spring spring
+
 COPY --from=builder /build/target/*.jar app.jar
+
 USER spring
 EXPOSE 8080
+
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
             CMD curl -f http://localhost:8080/actuator/health || exit 1
+
 ENTRYPOINT ["java", "-jar", "app.jar"]

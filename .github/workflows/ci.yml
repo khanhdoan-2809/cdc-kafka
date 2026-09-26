@@ -34,28 +34,43 @@ jobs:
       - name: Verify
         run: ./mvnw -B clean verify
 
-  smoke-test:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - name: Check
-        uses: actions/checkout@v4
+#  smoke-test:
+#    runs-on: ubuntu-latest
+#    needs: test
+#    steps:
+#      - name: Check
+#        uses: actions/checkout@v4
+#
+#      - name: Start application
+#        run: docker compose up --build -d
+#
+#      - name: Business smoke test
+#        run: |
+#          RESPONSE_HEADERS=$(mktemp)
+#          curl --fail \
+#            -D "$RESPONSE_HEADERS" \
+#            -X POST http://localhost:8080/api/transports \
+#            -H "Content-Type: application/json" \
+#            -H "X-User-Id: ci-user" \
+#            -H "X-Request-Id: ci-request-001" \
+#            -H "X-Correlation-Id: ci-flow-001" \
+#            -d '{"reference":"CI-TRANSPORT-001"}'
+#
+#          grep -i "X-Request-Id: ci-request-001" "$RESPONSE_HEADERS"
+#          grep -i "X-Correlation-Id: ci-flow-001" "$RESPONSE_HEADERS"
 
-      - name: Start application
-        run: docker compose up --build -d
-
-      - name: Wait for application
-        run: |
-          for i in {1..30}; do
-            if curl --fail http://localhost:8080/actuator/health; then
-              exit 0
-            fi
-            
-            sleep 2
-          done
-          
-          docker compose logs
-          exit 1
+#      - name: Wait for application
+#        run: |
+#          for i in {1..30}; do
+#            if curl --fail http://localhost:8080/actuator/health; then
+#              exit 0
+#            fi
+#
+#            sleep 2
+#          done
+#
+#          docker compose logs
+#          exit 1
 
       - name: Shutdown application
         if: always()

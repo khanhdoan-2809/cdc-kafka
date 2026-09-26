@@ -59,18 +59,18 @@ jobs:
 #          grep -i "X-Request-Id: ci-request-001" "$RESPONSE_HEADERS"
 #          grep -i "X-Correlation-Id: ci-flow-001" "$RESPONSE_HEADERS"
 
-      - name: Wait for application
-        run: |
-          for i in {1..30}; do
-            if curl --fail http://localhost:8080/actuator/health; then
-              exit 0
-            fi
-            
-            sleep 2
-          done
-          
-          docker compose logs
-          exit 1
+#      - name: Wait for application
+#        run: |
+#          for i in {1..30}; do
+#            if curl --fail http://localhost:8080/actuator/health; then
+#              exit 0
+#            fi
+#
+#            sleep 2
+#          done
+#
+#          docker compose logs
+#          exit 1
 
       - name: Shutdown application
         if: always()

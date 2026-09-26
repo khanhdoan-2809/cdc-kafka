@@ -44,6 +44,21 @@ jobs:
       - name: Start application
         run: docker compose up --build -d
 
+      - name: Business smoke test
+        run: |
+          RESPONSE_HEADERS=$(mktemp)
+          curl --fail \
+            -D "$RESPONSE_HEADERS" \
+            -X POST http://localhost:8080/api/transports \
+            -H "Content-Type: application/json" \
+            -H "X-User-Id: ci-user" \
+            -H "X-Request-Id: ci-request-001" \
+            -H "X-Correlation-Id: ci-flow-001" \
+            -d '{"reference":"CI-TRANSPORT-001"}'
+          
+          grep -i "X-Request-Id: ci-request-001" "$RESPONSE_HEADERS"
+          grep -i "X-Correlation-Id: ci-flow-001" "$RESPONSE_HEADERS"
+
       - name: Wait for application
         run: |
           for i in {1..30}; do

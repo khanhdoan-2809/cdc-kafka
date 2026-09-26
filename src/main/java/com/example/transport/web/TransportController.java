@@ -25,16 +25,6 @@ public class TransportController {
         return toResponse(transportService.create(request.reference()));
     }
 
-    @GetMapping("/{id}")
-    public TransportResponse get(@PathVariable Long id) {
-        return toResponse(transportService.findById(id));
-    }
-
-    @GetMapping
-    public List<TransportResponse> getAll() {
-        return transportService.findAll().stream().map(this::toResponse).toList();
-    }
-
     @PatchMapping("/{id}/status")
     public TransportResponse changeStatus(@PathVariable Long id, @Valid @RequestBody ChangeTransportStatusRequest request) {
         return toResponse(transportService.changeStatus(id, request.status()));

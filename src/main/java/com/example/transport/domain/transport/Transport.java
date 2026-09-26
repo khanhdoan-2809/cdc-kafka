@@ -1,5 +1,6 @@
 package com.example.transport.domain.transport;
 
+import com.example.transport.domain.common.AuditableEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -11,34 +12,33 @@ import java.time.Instant;
 @Entity
 @Table(name = "transport")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Transport {
+public class Transport extends AuditableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String reference;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TransportStatus status;
 
-    @Column(nullable = false)
-    private Instant createdAt;
-
-    @Column(nullable = false)
-    private Instant updatedAt;
-
     public Transport(String reference) {
         this.reference = reference;
         this.status = TransportStatus.CREATED;
-        this.createdAt = Instant.now();
-        this.updatedAt = this.createdAt;
     }
 
     public void changeStatus(TransportStatus status) {
+        if (this.status == status) {
+            return;
+        }
+
         this.status = status;
-        this.updatedAt = Instant.now();
+    }
+
+    public void delete(Instant now) {
+        markDeleted(now);
     }
 }

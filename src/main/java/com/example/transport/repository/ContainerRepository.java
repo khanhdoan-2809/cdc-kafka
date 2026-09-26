@@ -4,10 +4,18 @@ import com.example.transport.domain.container.ShippingContainer;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
-public interface ContainerRepository extends JpaRepository<ShippingContainer, Long> {
+public interface ContainerRepository
+        extends JpaRepository<ShippingContainer, Long> {
 
-    List<ShippingContainer> findAllByJobId(Long jobId);
+    Optional<ShippingContainer>
+    findByIdAndDeletedAtIsNull(Long id);
 
-    boolean existsByContainerNumber(String containerNumber);
+    List<ShippingContainer>
+    findAllByJobIdAndDeletedAtIsNull(Long jobId);
+
+    boolean existsByContainerNumberAndDeletedAtIsNull(
+            String containerNumber
+    );
 }

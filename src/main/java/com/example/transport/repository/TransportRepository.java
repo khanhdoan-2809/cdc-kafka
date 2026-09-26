@@ -3,7 +3,19 @@ package com.example.transport.repository;
 import com.example.transport.domain.transport.Transport;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface TransportRepository extends JpaRepository<Transport, Long> {
+import java.util.List;
+import java.util.Optional;
 
-    boolean existsByReference(String reference);
+public interface TransportRepository
+        extends JpaRepository<Transport, Long> {
+
+    Optional<Transport> findByIdAndDeletedAtIsNull(Long id);
+
+    List<Transport> findAllByDeletedAtIsNull();
+
+    boolean existsByIdAndDeletedAtIsNull(Long id);
+
+    boolean existsByReferenceAndDeletedAtIsNull(
+            String reference
+    );
 }

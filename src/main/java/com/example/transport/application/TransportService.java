@@ -1,43 +1,54 @@
 package com.example.transport.application;
 
-import com.example.transport.application.context.CurrentRequestContext;
 import com.example.transport.domain.transport.Transport;
 import com.example.transport.domain.transport.TransportStatus;
 import com.example.transport.repository.TransportRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Slf4j
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class TransportService {
 
     private final TransportRepository transportRepository;
-    private final CurrentRequestContext currentRequestContext;
+    private final Clock clock;
 
     @Transactional
     public Transport create(String reference) {
-        var context = currentRequestContext.get();
+        if (transportRepository
+                .existsByReferenceAndDeletedAtIsNull(reference)) {
 
-        if (transportRepository.existsByReference(reference)) {
             throw new IllegalArgumentException(
-                    "Transport reference already exists"
+                    "Transport reference already exists: " +
+                            reference
             );
         }
 
-        var transport = new Transport(reference);
-
-        transportRepository.save(transport);
-
-        log.info(
-                "Transport created. transportId={}, actorId={}",
-                transport.getId(),
-                context.actorId()
+        return transportRepository.save(
+                new Transport(reference)
         );
+    }
 
-        return transport;
+    @Transactional(readOnly = true)
+    public Transport findById(Long id) {
+        return transportRepository
+                .findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Transport not found: " + id
+                        )
+                );
+    }
+
+    @Transactional(readOnly = true)
+    public List<Transport> findAll() {
+        return transportRepository
+                .findAllByDeletedAtIsNull();
     }
 
     @Transactional
@@ -45,28 +56,19 @@ public class TransportService {
             Long id,
             TransportStatus status) {
 
-        var context = currentRequestContext.get();
-
-        var transport = transportRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Transport not found: " + id
-                        )
-                );
-
-        var oldStatus = transport.getStatus();
+        var transport = findById(id);
 
         transport.changeStatus(status);
 
-        log.info(
-                "Transport status changed. transportId={}, oldStatus={}, newStatus={}, actorId={}",
-                transport.getId(),
-                oldStatus,
-                status,
-                context.actorId()
-        );
-
-        return transport;
+        return transportRepository.save(transport);
     }
 
+    @Transactional
+    public void delete(Long id) {
+        var transport = findById(id);
+
+        transport.delete(Instant.now(clock));
+
+        transportRepository.save(transport);
+    }
 }

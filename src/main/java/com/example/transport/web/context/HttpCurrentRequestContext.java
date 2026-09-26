@@ -14,7 +14,7 @@ public class HttpCurrentRequestContext implements CurrentRequestContext {
 
     public HttpCurrentRequestContext(HttpServletRequest request) {
         var attribute = request.getAttribute(
-                RequestContextFilter.REQUEST_CONTEXT_ATTRIBUTE
+                RequestContextFilterCustom.REQUEST_CONTEXT_ATTRIBUTE
         );
 
         if (!(attribute instanceof RequestContext requestContext)) {

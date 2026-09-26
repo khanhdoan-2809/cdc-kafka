@@ -17,7 +17,7 @@ import java.util.UUID;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
-public class RequestContextFilter extends OncePerRequestFilter {
+public class RequestContextFilterCustom extends OncePerRequestFilter {
 
     public static final String REQUEST_CONTEXT_ATTRIBUTE = RequestContext.class.getName();
 

@@ -27,7 +27,7 @@ public class WriteActorFilter extends OncePerRequestFilter {
         }
 
         var context = (RequestContext) request.getAttribute(
-                RequestContextFilter.REQUEST_CONTEXT_ATTRIBUTE
+                RequestContextFilterCustom.REQUEST_CONTEXT_ATTRIBUTE
         );
 
         if (context == null || !context.hasActor()) {

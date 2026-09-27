@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: audit-consumer
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+    consumer:
+      group-id: audit-consumer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+    listener:
+      ack-mode: record
+
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: 20s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+audit:
+  kafka:
+    topics:
+      transport: transport.public.transport
+      job: transport.public.job
+      container: transport.public.container
+
+logging:
+  level:
+    com.example.auditconsumer: DEBUG

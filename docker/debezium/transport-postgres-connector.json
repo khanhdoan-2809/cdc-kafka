@@ -1,0 +1,31 @@
+{
+  "name": "transport-postgres-cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "debezium",
+    "database.password": "debezium",
+    "database.dbname": "transport",
+
+    "plugin.name": "pgoutput",
+
+    "slot.name": "transport_cdc_slot",
+
+    "publication.name": "transport_cdc_publication",
+    "publication.autocreate.mode": "disabled",
+
+    "topic.prefix": "transport",
+
+    "table.include.list": "public.transport,public.job,public.container",
+
+    "snapshot.mode": "initial",
+
+    "provide.transaction.metadata": "true",
+
+    "topic.creation.default.replication.factor": "1",
+    "topic.creation.default.partitions": "3"
+  }
+}

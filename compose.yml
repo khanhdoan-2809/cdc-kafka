@@ -1,5 +1,5 @@
 services:
-  postgres:
+  transport-postgres:
     image: postgres:17
     container_name: transport-postgres
 
@@ -18,12 +18,29 @@ services:
       - -c
       - max_slot_wal_keep_size=1GB
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - transport-postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U transport -d transport"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  audit-postgres:
+    image: postgres:17
+    container_name: audit-postgres
+    environment:
+      POSTGRES_DB: audit
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit
+    ports:
+      - "5433:5432"
+    volumes:
+      - audit-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U audit -d audit" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -133,6 +150,13 @@ services:
     container_name: audit-consumer
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+
+      AUDIT_DB_HOST: audit-postgres
+      AUDIT_DB_PORT: 5432
+      AUDIT_DB_NAME: audit
+      AUDIT_DB_USERNAME: audit
+      AUDIT_DB_PASSWORD: audit
+
       SERVER_PORT: 8081
     ports:
       - "8081:8081"
@@ -142,4 +166,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres-data:
+  transport-postgres-data:
+  audit-postgres-data:

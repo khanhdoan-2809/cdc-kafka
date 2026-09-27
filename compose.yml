@@ -141,7 +141,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      postgres:
+      transport-postgres:
         condition: service_healthy
 
   audit-consumer:

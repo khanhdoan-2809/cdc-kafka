@@ -47,3 +47,11 @@ audit:
       transport: transport.public.transport
       job: transport.public.job
       container: transport.public.container
+
+    retry:
+      interval-ms: ${AUDIT_RETRY_INTERVAL_MS:2000}
+      max-retries: ${AUDIT_RETRY_MAX_RETRIES:2}
+
+    dlt:
+      partitions: ${AUDIT_DLT_PARTITIONS:3}
+      replication-factor: ${AUDIT_DLT_REPLICATION_FACTOR:1}

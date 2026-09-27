@@ -1,6 +1,7 @@
 package com.example.auditconsumer.infrastructure.persistence;
 
 import com.example.auditconsumer.application.port.AuditLogStore;
+import com.example.auditconsumer.application.port.AuditSaveResult;
 import com.example.auditconsumer.domain.AuditEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,8 +16,8 @@ public class JdbcAuditLogStore implements AuditLogStore {
     private final JsonMapper jsonMapper;
 
     @Override
-    public void save(AuditEvent event) {
-        jdbcTemplate.update("""
+    public AuditSaveResult save(AuditEvent event) {
+        var affectedRows = jdbcTemplate.update("""
             INSERT INTO data_audit_log (
                 entity_type,
                 entity_id,
@@ -59,6 +60,12 @@ public class JdbcAuditLogStore implements AuditLogStore {
                 ?, ?, ?,
                 ?, ?, ?, ?
             )
+            ON CONFLICT (
+                source_topic,
+                source_partition,
+                source_offset
+            )
+            DO NOTHING
             """,
                 event.entityType().name(),
                 event.entityId(),
@@ -89,13 +96,13 @@ public class JdbcAuditLogStore implements AuditLogStore {
                 event.sourceOffset(),
                 event.sourceKey()
         );
+
+        return affectedRows == 1
+                ? AuditSaveResult.INSERTED
+                : AuditSaveResult.DUPLICATE;
     }
 
     private String json(Object value) {
-        if (value == null) {
-            return null;
-        }
-
-        return value.toString();
+        return value == null ? null : value.toString();
     }
 }

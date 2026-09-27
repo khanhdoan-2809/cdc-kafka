@@ -125,7 +125,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      postgres:
+      transport-postgres:
         condition: service_healthy
 
   transport-service:

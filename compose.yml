@@ -55,7 +55,6 @@ services:
       CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
 
       KAFKA_NODE_ID: 1
-
       KAFKA_PROCESS_ROLES: "broker,controller"
 
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
@@ -67,11 +66,9 @@ services:
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:19092,PLAINTEXT_HOST://localhost:9092"
 
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-
       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
 
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
@@ -93,6 +90,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
 
   kafka-connect:
     image: quay.io/debezium/connect:3.6
@@ -168,3 +167,4 @@ services:
 volumes:
   transport-postgres-data:
   audit-postgres-data:
+  kafka-data:

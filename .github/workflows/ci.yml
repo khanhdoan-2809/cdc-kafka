@@ -44,15 +44,15 @@ jobs:
             dockerfile: transport-service/Dockerfile
           - image: audit-consumer
             dockerfile: audit-consumer/Dockerfile
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v7
-        - name: Builder Docker Image
-          run: |
-            docker build \
-              -f ${{ matrix.dockerfile }} \
-              -t ${{ matrix.image }}:${{ github.sha }} \
-              .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Builder Docker Image
+        run: |
+          docker build \
+            -f ${{ matrix.dockerfile }} \
+            -t ${{ matrix.image }}:${{ github.sha }} \
+            .
 
 #  smoke-test:
 #    runs-on: ubuntu-latest

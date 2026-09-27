@@ -2,21 +2,22 @@ FROM eclipse-temurin:21-jdk AS builder
 
 WORKDIR /app
 
-COPY . .
+COPY mvnw .
+COPY .mvn .mvn
+COPY pom.xml .
 
-RUN ./mvnw \
-    -pl audit-consumer \
-    -am \
-    clean package \
-    -DskipTests
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
+RUN ./mvnw -B dependency:go-offline
 
+COPY src ./src
+RUN ./mvnw -B clean package -DskipTests
 
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
 COPY --from=builder \
-    /app/audit-consumer/target/audit-consumer-*.jar \
+    /app/target/audit-consumer-*.jar \
     /app/audit-consumer.jar
 
 EXPOSE 8081

@@ -2,6 +2,8 @@ package com.example.auditconsumer.infrastructure.kafka;
 
 import com.example.auditconsumer.application.exception.InvalidCdcEventException;
 import com.example.auditconsumer.application.exception.UnsupportedCdcEventException;
+import com.example.auditconsumer.infrastructure.observability.AuditMetrics;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +17,10 @@ import org.springframework.util.backoff.FixedBackOff;
 
 @Slf4j
 @Configuration
+@AllArgsConstructor
 public class KafkaErrorConfiguration {
+
+    private final AuditMetrics auditMetrics;
 
     @Bean
     DefaultErrorHandler kafkaErrorHandler(
@@ -40,15 +45,17 @@ public class KafkaErrorConfiguration {
         );
 
         errorHandler.setRetryListeners(
-                (record, exception, deliveryAttempt) ->
-                        log.warn(
-                                "Kafka processing failed topic={} partition={} offset={} attempt={}",
-                                record.topic(),
-                                record.partition(),
-                                record.offset(),
-                                deliveryAttempt,
-                                exception
-                        )
+                (record, exception, deliveryAttempt) -> {
+                    auditMetrics.retry(record.topic());
+                    log.warn(
+                            "Kafka processing failed topic={} partition={} offset={} attempt={}",
+                            record.topic(),
+                            record.partition(),
+                            record.offset(),
+                            deliveryAttempt,
+                            exception
+                    );
+                }
         );
 
         return errorHandler;

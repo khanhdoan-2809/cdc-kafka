@@ -113,7 +113,7 @@ services:
 
   transport-service:
     build:
-      context: .
+      context: ./transport-service
     container_name: transport-service
     environment:
       DB_HOST: postgres

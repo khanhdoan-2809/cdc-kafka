@@ -13,7 +13,7 @@
     </parent>
 
     <groupId>com.example</groupId>
-    <artifactId>transport</artifactId>
+    <artifactId>transport-service</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 
     <properties>

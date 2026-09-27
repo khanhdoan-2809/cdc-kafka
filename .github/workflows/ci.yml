@@ -29,9 +29,11 @@ jobs:
           cache: maven
 
       - name: Make Maven wrapper executable
+        working-directory: ./transport-service
         run: chmod +x mvnw
 
       - name: Verify
+        working-directory: ./transport-service
         run: ./mvnw -B clean verify
 
 #  smoke-test:

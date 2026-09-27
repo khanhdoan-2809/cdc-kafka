@@ -98,6 +98,7 @@ services:
     container_name: transport-kafka-connect
     ports:
       - "8083:8083"
+      - "9012:9012"
     environment:
       BOOTSTRAP_SERVERS: kafka:19092
       GROUP_ID: transport-connect
@@ -121,6 +122,11 @@ services:
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
 
       CONNECT_TOPIC_CREATION_ENABLE: "true"
+
+      JMXPORT: 9012
+      JMXHOST: 0.0.0.0
+      JMXAUTH: "false"
+      JMXSSL: "false"
     depends_on:
       kafka:
         condition: service_healthy
@@ -132,7 +138,7 @@ services:
       context: ./transport-service
     container_name: transport-service
     environment:
-      DB_HOST: postgres
+      DB_HOST: transport-postgres
       DB_PORT: 5432
       DB_NAME: transport
       DB_USERNAME: transport
@@ -164,7 +170,45 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+    depends_on:
+      - prometheus
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+
+    environment:
+      DATA_SOURCE_URI: postgres:5432/transport?sslmode=disable
+      DATA_SOURCE_USER: transport
+      DATA_SOURCE_PASS: transport
+
+    ports:
+      - "9187:9187"
+
+    depends_on:
+      - transport-postgres
+
 volumes:
   transport-postgres-data:
   audit-postgres-data:
   kafka-data:
+  prometheus-data:
+  grafana-data:

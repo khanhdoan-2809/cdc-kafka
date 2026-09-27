@@ -3,6 +3,7 @@ package com.example.auditconsumer.infrastructure.kafka;
 import com.example.auditconsumer.application.AuditEventMapper;
 import com.example.auditconsumer.application.AuditLogService;
 import com.example.auditconsumer.infrastructure.kafka.model.SourceRecordMetadata;
+import com.example.auditconsumer.infrastructure.observability.AuditMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -17,6 +18,7 @@ public class AuditCdcListener {
     private final DebeziumEventParser parser;
     private final AuditEventMapper mapper;
     private final AuditLogService auditLogService;
+    private final AuditMetrics auditMetrics;
 
     @KafkaListener(
             topics = {
@@ -51,6 +53,8 @@ public class AuditCdcListener {
         var event = auditEvent.get();
 
         var result = auditLogService.save(event);
+
+        auditMetrics.processed(event, result);
 
         switch (result) {
             case INSERTED -> log.info(

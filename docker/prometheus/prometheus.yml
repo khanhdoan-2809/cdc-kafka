@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 10s
+
+scrape_configs:
+  - job_name: transport-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+       - targets:
+         - transport-service:8080
+
+  - job_name: audit-consumer
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - audit-consumer:8081
+
+  - job_name: postgres
+    static_configs:
+      - targets:
+          - postgres-exporter:9187

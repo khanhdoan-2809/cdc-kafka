@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -41,18 +41,20 @@ jobs:
       matrix:
         include:
           - image: transport-service
-            dockerfile: transport-service/Dockerfile
+            context: ./transport-service
+            dockerfile: Dockerfile
           - image: audit-consumer
-            dockerfile: audit-consumer/Dockerfile
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v7
-        - name: Builder Docker Image
-          run: |
-            docker build \
-              -f ${{ matrix.dockerfile }} \
-              -t ${{ matrix.image }}:${{ github.sha }} \
-              .
+            context: ./audit-consumer
+            dockerfile: Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Builder Docker Image
+        run: |
+          docker build \
+            -f ${{ matrix.context }}/${{ matrix.dockerfile }} \
+            -t ${{ matrix.image }}:${{ github.sha }} \
+            ${{ matrix.context }}
 
 #  smoke-test:
 #    runs-on: ubuntu-latest

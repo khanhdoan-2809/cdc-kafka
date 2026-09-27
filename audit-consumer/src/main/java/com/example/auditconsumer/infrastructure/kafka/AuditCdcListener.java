@@ -50,17 +50,25 @@ public class AuditCdcListener {
 
         var event = auditEvent.get();
 
-        auditLogService.save(event);
+        var result = auditLogService.save(event);
 
-        log.info(
-                "Audit persisted entity={} entityId={} operation={} actor={} topic={} partition={} offset={}",
-                event.entityType(),
-                event.entityId(),
-                event.operation(),
-                event.actorId(),
-                event.sourceTopic(),
-                event.sourcePartition(),
-                event.sourceOffset()
-        );
+        switch (result) {
+            case INSERTED -> log.info(
+                    "Audit persisted entity={} entityId={} operation={} topic={} partition={} offset={}",
+                    event.entityType(),
+                    event.entityId(),
+                    event.operation(),
+                    event.sourceTopic(),
+                    event.sourcePartition(),
+                    event.sourceOffset()
+            );
+
+            case DUPLICATE -> log.info(
+                    "Audit event already processed topic={} partition={} offset={}",
+                    event.sourceTopic(),
+                    event.sourcePartition(),
+                    event.sourceOffset()
+            );
+        }
     }
 }

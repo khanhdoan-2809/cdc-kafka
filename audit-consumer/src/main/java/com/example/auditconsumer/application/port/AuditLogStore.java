@@ -4,5 +4,5 @@ import com.example.auditconsumer.domain.AuditEvent;
 
 public interface AuditLogStore {
 
-    void save(AuditEvent event);
+    AuditSaveResult save(AuditEvent event);
 }

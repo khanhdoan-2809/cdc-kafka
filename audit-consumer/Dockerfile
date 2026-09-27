@@ -1,22 +1,24 @@
 FROM eclipse-temurin:21-jdk AS builder
-WORKDIR /build
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
 
-RUN chmod +x mvnw
-RUN ./mvnw -B dependency:go-offline
+WORKDIR /app
 
-COPY src ./src
-RUN ./mvnw -B clean package -DskipTests
+COPY . .
 
-## ==================================================
+RUN ./mvnw \
+    -pl audit-consumer \
+    -am \
+    clean package \
+    -DskipTests
+
 
 FROM eclipse-temurin:21-jre
-WORKDIR /app
-RUN groupadd --system spring && \
-    useradd --system --gid spring spring
 
-COPY --from=builder /build/target/*.jar app.jar
+WORKDIR /app
+
+COPY --from=builder \
+    /app/audit-consumer/target/audit-consumer-*.jar \
+    /app/audit-consumer.jar
+
+EXPOSE 8081
 
 ENTRYPOINT ["java", "-jar", "/app/audit-consumer.jar"]

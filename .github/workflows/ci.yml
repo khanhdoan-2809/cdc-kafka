@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Check
@@ -29,12 +29,30 @@ jobs:
           cache: maven
 
       - name: Make Maven wrapper executable
-        working-directory: ./transport-service
         run: chmod +x mvnw
 
       - name: Verify
-        working-directory: ./transport-service
         run: ./mvnw -B clean verify
+
+  docker:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: transport-service
+            dockerfile: transport-service/Dockerfile
+          - image: audit-consumer
+            dockerfile: audit-consumer/Dockerfile
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v7
+        - name: Builder Docker Image
+          run: |
+            docker build \
+              -f ${{ matrix.dockerfile }} \
+              -t ${{ matrix.image }}:${{ github.sha }} \
+              .
 
 #  smoke-test:
 #    runs-on: ubuntu-latest

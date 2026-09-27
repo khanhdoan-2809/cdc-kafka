@@ -2,6 +2,18 @@ spring:
   application:
     name: audit-consumer
 
+  datasource:
+    url: jdbc:postgresql://${AUDIT_DB_HOST:localhost}:${AUDIT_DB_PORT:5433}/${AUDIT_DB_NAME:audit}
+    username: ${AUDIT_DB_USERNAME:audit}
+    password: ${AUDIT_DB_PASSWORD:audit}
+
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  flyway:
+    enabled: true
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
@@ -35,7 +47,3 @@ audit:
       transport: transport.public.transport
       job: transport.public.job
       container: transport.public.container
-
-logging:
-  level:
-    com.example.auditconsumer: DEBUG

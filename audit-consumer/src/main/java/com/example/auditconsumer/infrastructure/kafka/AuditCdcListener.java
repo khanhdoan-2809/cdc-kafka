@@ -1,6 +1,7 @@
 package com.example.auditconsumer.infrastructure.kafka;
 
 import com.example.auditconsumer.application.AuditEventMapper;
+import com.example.auditconsumer.application.AuditLogService;
 import com.example.auditconsumer.infrastructure.kafka.model.SourceRecordMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,28 +16,23 @@ public class AuditCdcListener {
 
     private final DebeziumEventParser parser;
     private final AuditEventMapper mapper;
+    private final AuditLogService auditLogService;
 
     @KafkaListener(
             topics = {
-                "${audit.kafka.topics.transport}",
-                "${audit.kafka.topics.job}",
-                "${audit.kafka.topics.container}"
+                    "${audit.kafka.topics.transport}",
+                    "${audit.kafka.topics.job}",
+                    "${audit.kafka.topics.container}"
             }
     )
     public void consume(ConsumerRecord<String, String> record) {
         if (record.value() == null) {
-            log.debug(
-                    "Ignoring tombstone topic={} partition={} offset={} key={}",
-                    record.topic(),
-                    record.partition(),
-                    record.offset(),
-                    record.key()
-            );
-
+            log.debug("Ignoring tombstone topic={} partition={} offset={}", record.topic(), record.partition(), record.offset());
             return;
         }
 
         var debeziumEvent = parser.parse(record.value());
+
         var metadata = new SourceRecordMetadata(
                 record.topic(),
                 record.partition(),
@@ -48,31 +44,23 @@ public class AuditCdcListener {
         var auditEvent = mapper.map(debeziumEvent, metadata);
 
         if (auditEvent.isEmpty()) {
-            log.debug(
-                    "Ignoring snapshot topic={} partition={} offset={}",
-                    record.topic(),
-                    record.partition(),
-                    record.offset()
-            );
-
+            log.debug("Ignoring snapshot topic={} partition={} offset={}", record.topic(), record.partition(), record.offset());
             return;
         }
 
         var event = auditEvent.get();
 
+        auditLogService.save(event);
+
         log.info(
-                "Audit event entity={} entityId={} operation={} actor={} changedFields={} topic={} partition={} offset={}",
+                "Audit persisted entity={} entityId={} operation={} actor={} topic={} partition={} offset={}",
                 event.entityType(),
                 event.entityId(),
                 event.operation(),
                 event.actorId(),
-                event.changedFields(),
                 event.sourceTopic(),
                 event.sourcePartition(),
                 event.sourceOffset()
         );
-
-        log.debug("Normalized audit event={}", event);
     }
-
 }

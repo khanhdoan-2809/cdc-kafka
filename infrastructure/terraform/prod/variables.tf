@@ -20,3 +20,9 @@ variable "aws_account_id" {
   description = "Expected AWS account ID."
   type        = string
 }
+
+variable "vpc_cidr" {
+  description = "CIDR block used by the production VPC."
+  type        = string
+  default     = "10.20.0.0/16"
+}

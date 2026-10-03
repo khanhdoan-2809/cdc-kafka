@@ -1,9 +1,6 @@
 package com.example.auditconsumer.infrastructure.kafka;
 
-import com.example.auditconsumer.application.AuditEventMapper;
-import com.example.auditconsumer.application.AuditLogService;
 import com.example.auditconsumer.infrastructure.kafka.model.SourceRecordMetadata;
-import com.example.auditconsumer.infrastructure.observability.AuditMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -15,10 +12,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AuditCdcListener {
 
-    private final DebeziumEventParser parser;
-    private final AuditEventMapper mapper;
-    private final AuditLogService auditLogService;
-    private final AuditMetrics auditMetrics;
+    private final AuditCdcProcessor processor;
 
     @KafkaListener(
             topics = {
@@ -29,11 +23,15 @@ public class AuditCdcListener {
     )
     public void consume(ConsumerRecord<String, String> record) {
         if (record.value() == null) {
-            log.debug("Ignoring tombstone topic={} partition={} offset={}", record.topic(), record.partition(), record.offset());
+            log.debug(
+                    "Ignoring tombstone topic={} partition={} offset={}",
+                    record.topic(),
+                    record.partition(),
+                    record.offset()
+            );
+
             return;
         }
-
-        var debeziumEvent = parser.parse(record.value());
 
         var metadata = new SourceRecordMetadata(
                 record.topic(),
@@ -43,36 +41,6 @@ public class AuditCdcListener {
                 record.key()
         );
 
-        var auditEvent = mapper.map(debeziumEvent, metadata);
-
-        if (auditEvent.isEmpty()) {
-            log.debug("Ignoring snapshot topic={} partition={} offset={}", record.topic(), record.partition(), record.offset());
-            return;
-        }
-
-        var event = auditEvent.get();
-
-        var result = auditLogService.save(event);
-
-        auditMetrics.processed(event, result);
-
-        switch (result) {
-            case INSERTED -> log.info(
-                    "Audit persisted entity={} entityId={} operation={} topic={} partition={} offset={}",
-                    event.entityType(),
-                    event.entityId(),
-                    event.operation(),
-                    event.sourceTopic(),
-                    event.sourcePartition(),
-                    event.sourceOffset()
-            );
-
-            case DUPLICATE -> log.info(
-                    "Audit event already processed topic={} partition={} offset={}",
-                    event.sourceTopic(),
-                    event.sourcePartition(),
-                    event.sourceOffset()
-            );
-        }
+        processor.process(record.value(), metadata);
     }
 }

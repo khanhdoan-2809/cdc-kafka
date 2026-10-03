@@ -60,4 +60,11 @@ public class AuditMetrics {
                 .register(meterRegistry)
                 .record(duration);
     }
+
+    public void dltReplayed(String topic) {
+        meterRegistry.counter(
+                "audit.kafka.dlt.replayed",
+                "topic", topic
+        ).increment();
+    }
 }

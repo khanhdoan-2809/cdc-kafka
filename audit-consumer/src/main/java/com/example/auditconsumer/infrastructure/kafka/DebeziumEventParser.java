@@ -1,5 +1,6 @@
 package com.example.auditconsumer.infrastructure.kafka;
 
+import com.example.auditconsumer.application.exception.InvalidCdcEventException;
 import com.example.auditconsumer.infrastructure.kafka.model.DebeziumEvent;
 import com.example.auditconsumer.infrastructure.kafka.model.DebeziumSource;
 import com.example.auditconsumer.infrastructure.kafka.model.DebeziumTransaction;
@@ -17,7 +18,17 @@ public class DebeziumEventParser {
     public DebeziumEvent parse(String payload) {
         try {
             var root = jsonMapper.readTree(payload);
-            var source = root.path("source");
+
+            if (root == null || !root.isObject()) {
+                throw new InvalidCdcEventException("Debezium payload must be a JSON object");
+            }
+
+            var source = root.get("source");
+
+            if (source == null || source.isNull()) {
+                throw new InvalidCdcEventException("Debezium event does not contain source metadata");
+            }
+
             var transaction = root.get("transaction");
 
             return new DebeziumEvent(
@@ -40,8 +51,10 @@ public class DebeziumEventParser {
                             longOrNull(transaction, "data_collection_order")
                     )
             );
+        } catch (InvalidCdcEventException e) {
+            throw e;
         } catch (Exception e) {
-            throw new IllegalArgumentException("Cannot parse Debezium event", e);
+            throw new InvalidCdcEventException("Cannot parse Debezium event", e);
         }
     }
 

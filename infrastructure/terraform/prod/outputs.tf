@@ -54,3 +54,35 @@ output "ecr_repository_urls" {
     key => repository.repository_url
   }
 }
+
+############ RDS Outputs ############
+output "rds_endpoint" {
+  description = "PostgreSQL RDS endpoint."
+  value       = aws_db_instance.postgres.address
+}
+
+output "rds_port" {
+  description = "PostgreSQL RDS port."
+  value       = aws_db_instance.postgres.port
+}
+
+output "rds_database_name" {
+  description = "Initial PostgreSQL database name."
+  value       = aws_db_instance.postgres.db_name
+}
+
+output "rds_security_group_id" {
+  description = "RDS security group ID."
+  value       = aws_security_group.rds.id
+}
+
+output "rds_master_secret_arn" {
+  description = "Secrets Manager secret containing the RDS administrator credentials."
+
+  value = try(
+    aws_db_instance.postgres.master_user_secret[0].secret_arn,
+    null
+  )
+
+  sensitive = true
+}

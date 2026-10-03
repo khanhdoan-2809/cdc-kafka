@@ -4,7 +4,7 @@
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "tasks.max": "1",
 
-    "database.hostname": "postgres",
+    "database.hostname": "transport-postgres",
     "database.port": "5432",
     "database.user": "debezium",
     "database.password": "debezium",
@@ -13,7 +13,6 @@
     "plugin.name": "pgoutput",
 
     "slot.name": "transport_cdc_slot",
-
     "publication.name": "transport_cdc_publication",
     "publication.autocreate.mode": "disabled",
 
@@ -22,7 +21,6 @@
     "table.include.list": "public.transport,public.job,public.container",
 
     "snapshot.mode": "initial",
-
     "provide.transaction.metadata": "true",
 
     "topic.creation.default.replication.factor": "1",

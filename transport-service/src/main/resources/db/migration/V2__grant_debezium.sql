@@ -7,7 +7,3 @@ GRANT SELECT ON TABLE container TO debezium;
 ALTER TABLE transport REPLICA IDENTITY FULL;
 ALTER TABLE job REPLICA IDENTITY FULL;
 ALTER TABLE container REPLICA IDENTITY FULL;
-
-CREATE PUBLICATION transport_cdc_publication
-FOR TABLE transport, job, container
-WITH (publish = 'insert, update, delete');

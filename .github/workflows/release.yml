@@ -1,0 +1,131 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release to AWS
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v7
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: maven
+
+      - name: Make Maven wrapper executable
+        run: chmod +x mvnw
+
+      - name: Verify release
+        run: ./mvnw -B clean verify
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push transport-service
+        id: transport
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_TRANSPORT_REPOSITORY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$RELEASE_TAG"
+          SHA_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA}"
+          
+          docker build \
+            -t "$IMAGE" \
+            -t "$SHA_IMAGE" \
+            ./transport-service
+          docker push "$IMAGE"
+          docker push "$SHA_IMAGE"
+          
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push audit-consumer
+        id: audit
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_AUDIT_REPOSITORY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$RELEASE_TAG"
+          SHA_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA}"
+          
+          docker build \
+            -t "$IMAGE" \
+            -t "$SHA_IMAGE" \
+            ./audit-consumer
+          docker push "$IMAGE"
+          docker push "$SHA_IMAGE"
+          
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Render transport-service task definition
+        id: transport-task
+        uses: aws-actions/amazon-ecs-render-task-definition@v2
+        with:
+          task-definition-family: ${{ vars.ECS_TRANSPORT_TASK_FAMILY }}
+          container-name: transport-service
+          image: ${{ steps.transport.outputs.image }}
+
+          environment-variables: |
+            DB_HOST=${{ vars.TRANSPORT_DB_HOST }}
+            DB_PORT=5432
+            DB_NAME=transport
+            DB_USERNAME=transport
+            SERVER_PORT=8080
+            
+          secrets: |
+            DB_PASSWORD=${{ vars.TRANSPORT_DB_PASSWORD_SECRET_ARN }}
+
+      - name: Deploy transport-service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.transport-task.outputs.task-definition }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_TRANSPORT_SERVICE }}
+          wait-for-service-stability: true
+
+      - name: Smoke test
+        env:
+          BASE_URL: ${{ vars.TRANSPORT_BASE_URL  }}
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent \
+              "$BASE_URL/actuator/health" \
+              > /dev/null; then
+  
+              echo "transport-service is healthy"
+              exit 0
+            fi
+  
+            sleep 5
+          done
+  
+          echo "transport-service did not become healthy"
+          exit 1

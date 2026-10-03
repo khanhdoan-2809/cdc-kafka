@@ -259,6 +259,9 @@ services:
       AUDIT_DB_USERNAME: audit
       AUDIT_DB_PASSWORD: audit
 
+      AUDIT_KAFKA_CONCURRENCY: 3
+      AUDIT_KAFKA_MAX_POLL_RECORDS: 100
+
       SERVER_PORT: 8081
     ports:
       - "8081:8081"
@@ -282,26 +285,21 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-
     volumes:
       - grafana-data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
-
     depends_on:
       - prometheus
 
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
-
     environment:
       DATA_SOURCE_URI: transport-postgres:5432/transport?sslmode=disable
       DATA_SOURCE_USER: transport
       DATA_SOURCE_PASS: transport
-
     ports:
       - "9187:9187"
-
     depends_on:
       - transport-postgres
 

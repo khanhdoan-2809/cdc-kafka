@@ -45,6 +45,14 @@ services:
       timeout: 5s
       retries: 10
 
+  kafka-volume-init:
+    image: alpine:3.20
+    user: "0:0"
+    volumes:
+      - kafka-data:/data
+    command: chown -R 1000:1000 /data
+    restart: "no"
+
   kafka:
     image: apache/kafka:4.3.1
     hostname: kafka
@@ -90,6 +98,9 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    depends_on:
+      kafka-volume-init:
+        condition: service_started
     volumes:
       - kafka-data:/tmp/kraft-combined-logs
 
@@ -133,6 +144,82 @@ services:
       transport-postgres:
         condition: service_healthy
 
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8088:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      # Kafka address from inside Docker network
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      # Also expose our Debezium Kafka Connect instance in the UI
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium-connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+    depends_on:
+      - kafka
+      - kafka-connect
+
+  debezium-init:
+    image: alpine:3.22
+    container_name: debezium-init
+
+    depends_on:
+      kafka-connect:
+        condition: service_started
+
+    volumes:
+      - ./docker/debezium/transport-postgres-connector.json:/config/connector.json:ro
+
+    entrypoint:
+      - /bin/sh
+      - -c
+
+    command:
+      - |
+        set -eu
+
+        apk add --no-cache curl jq
+
+        echo "Waiting for Kafka Connect..."
+
+        until curl -fsS http://kafka-connect:8083/connector-plugins > /dev/null; do
+          echo "Kafka Connect is not ready yet..."
+          sleep 2
+        done
+
+        echo "Kafka Connect is ready"
+
+        echo "Original connector file:"
+        cat /config/connector.json
+
+        jq '.config' /config/connector.json > /tmp/connector-config.json
+
+        echo
+        echo "Configuration being sent:"
+        cat /tmp/connector-config.json
+
+        echo
+        echo "Registering transport-postgres-cdc..."
+
+        curl -fSs \
+          -X PUT \
+          -H "Content-Type: application/json" \
+          --data-binary @/tmp/connector-config.json \
+          http://kafka-connect:8083/connectors/transport-postgres-cdc/config
+
+        echo
+        echo "Connector registered successfully"
+
+        echo
+        echo "Current connectors:"
+
+        curl -fSs http://kafka-connect:8083/connectors
+
+        echo
+
+    restart: "no"
+
   transport-service:
     build:
       context: ./transport-service
@@ -148,6 +235,16 @@ services:
     depends_on:
       transport-postgres:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:8080/actuator/health >/dev/null || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
 
   audit-consumer:
     build:
@@ -188,6 +285,8 @@ services:
 
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
 
     depends_on:
       - prometheus
@@ -196,7 +295,7 @@ services:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
 
     environment:
-      DATA_SOURCE_URI: postgres:5432/transport?sslmode=disable
+      DATA_SOURCE_URI: transport-postgres:5432/transport?sslmode=disable
       DATA_SOURCE_USER: transport
       DATA_SOURCE_PASS: transport
 

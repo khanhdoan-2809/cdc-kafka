@@ -8,6 +8,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+
 @Repository
 @RequiredArgsConstructor
 public class JdbcAuditLogStore implements AuditLogStore {
@@ -84,8 +88,8 @@ public class JdbcAuditLogStore implements AuditLogStore {
                 event.sourceLsn(),
                 event.sourceTransactionId(),
 
-                event.databaseOccurredAt(),
-                event.cdcProcessedAt(),
+                toOffsetDateTime(event.databaseOccurredAt()),
+                toOffsetDateTime(event.cdcProcessedAt()),
 
                 event.transactionId(),
                 event.transactionTotalOrder(),
@@ -104,5 +108,9 @@ public class JdbcAuditLogStore implements AuditLogStore {
 
     private String json(Object value) {
         return value == null ? null : value.toString();
+    }
+
+    private OffsetDateTime toOffsetDateTime(Instant value) {
+        return value == null ? null : value.atOffset(ZoneOffset.UTC);
     }
 }

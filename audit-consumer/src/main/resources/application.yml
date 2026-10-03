@@ -19,16 +19,15 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-
     consumer:
       group-id: audit-consumer
       auto-offset-reset: earliest
       enable-auto-commit: false
-
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-
+      max-poll-records: ${AUDIT_KAFKA_MAX_POLL_RECORDS:100}
     listener:
+      concurrency: ${AUDIT_KAFKA_CONCURRENCY:3}
       ack-mode: record
 
 server:
@@ -60,6 +59,7 @@ audit:
       transport: transport.public.transport
       job: transport.public.job
       container: transport.public.container
+      transaction: transport.transaction
 
     retry:
       interval-ms: ${AUDIT_RETRY_INTERVAL_MS:2000}

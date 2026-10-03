@@ -59,7 +59,6 @@ audit:
       transport: transport.public.transport
       job: transport.public.job
       container: transport.public.container
-      transaction: transport.transaction
 
     retry:
       interval-ms: ${AUDIT_RETRY_INTERVAL_MS:2000}
@@ -68,3 +67,7 @@ audit:
     dlt:
       partitions: ${AUDIT_DLT_PARTITIONS:3}
       replication-factor: ${AUDIT_DLT_REPLICATION_FACTOR:1}
+
+    dlt-relay:
+      enabled: ${AUDIT_DLT_REPLAY_ENABLED:false}
+      group-id: ${AUDIT_DLT_REPLAY_GROUP_ID:audit-dlt-replay}

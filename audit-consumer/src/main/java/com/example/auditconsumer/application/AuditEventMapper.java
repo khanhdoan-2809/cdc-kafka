@@ -1,5 +1,7 @@
 package com.example.auditconsumer.application;
 
+import com.example.auditconsumer.application.exception.InvalidCdcEventException;
+import com.example.auditconsumer.application.exception.UnsupportedCdcEventException;
 import com.example.auditconsumer.domain.AuditEvent;
 import com.example.auditconsumer.domain.AuditOperation;
 import com.example.auditconsumer.domain.EntityType;
@@ -34,10 +36,10 @@ public class AuditEventMapper {
         var row = event.after() != null ? event.after() : event.before();
 
         if (row == null) {
-            throw new IllegalArgumentException("CDC event does not contain before or after row");
+            throw new InvalidCdcEventException("CDC event does not contain before or after row");
         }
 
-        var entityType = EntityType.fromTable(event.source().table());
+        var entityType = resolveEntityType(event);
         var entityId = longValue(row, "id");
 
         var transportId = resolveTransportId(entityType, row);
@@ -87,6 +89,10 @@ public class AuditEventMapper {
     }
 
     private AuditOperation resolveOperation(DebeziumEvent event) {
+        if (event.operation() == null) {
+            throw new InvalidCdcEventException("CDC event does not contain operation");
+        }
+
         return switch (event.operation()) {
             case "c" -> AuditOperation.INSERT;
             case "u" -> isSoftDelete(event) ? AuditOperation.DELETE : AuditOperation.UPDATE;
@@ -192,5 +198,19 @@ public class AuditEventMapper {
 
     private Instant toInstant(Long epochMs) {
         return epochMs == null ? null : Instant.ofEpochMilli(epochMs);
+    }
+
+    private EntityType resolveEntityType(DebeziumEvent event) {
+        var table = event.source().table();
+
+        if (table == null) {
+            throw new InvalidCdcEventException("CDC source table is missing");
+        }
+
+        try {
+            return EntityType.fromTable(table);
+        } catch (IllegalArgumentException e) {
+            throw new UnsupportedCdcEventException(e.getMessage());
+        }
     }
 }

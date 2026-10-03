@@ -262,6 +262,9 @@ services:
       AUDIT_KAFKA_CONCURRENCY: 3
       AUDIT_KAFKA_MAX_POLL_RECORDS: 100
 
+      AUDIT_DLT_REPLAY_ENABLED: "false"
+      AUDIT_DLT_REPLAY_GROUP_ID: audit-dlt-replay
+
       SERVER_PORT: 8081
     ports:
       - "8081:8081"

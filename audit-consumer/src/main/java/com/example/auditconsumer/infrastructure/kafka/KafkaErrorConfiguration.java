@@ -5,6 +5,7 @@ import com.example.auditconsumer.application.exception.UnsupportedCdcEventExcept
 import com.example.auditconsumer.infrastructure.observability.AuditMetrics;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.listener.RetryListener;
 import org.springframework.util.backoff.FixedBackOff;
 
 @Slf4j
@@ -31,12 +33,25 @@ public class KafkaErrorConfiguration {
         var recoverer = new DeadLetterPublishingRecoverer(
                 kafkaTemplate,
                 (record, exception) ->
-                        new TopicPartition(record.topic() + ".dlt", record.partition())
+                        new TopicPartition(
+                                record.topic() + ".dlt",
+                                record.partition()
+                        )
         );
 
-        var errorHandler = new DefaultErrorHandler(recoverer, new FixedBackOff(
-                retryIntervalMs, maxRetries
-        ));
+        /*
+         * This is an audit pipeline.
+         *
+         * If publishing to the DLT itself fails, we must not consider
+         * the original Kafka record successfully recovered.
+         */
+        recoverer.setFailIfSendResultIsError(true);
+        recoverer.setLogRecoveryRecord(true);
+
+        var errorHandler = new DefaultErrorHandler(
+                recoverer,
+                new FixedBackOff(retryIntervalMs, maxRetries)
+        );
 
         errorHandler.addNotRetryableExceptions(
                 InvalidCdcEventException.class,
@@ -44,19 +59,58 @@ public class KafkaErrorConfiguration {
                 DataIntegrityViolationException.class
         );
 
-        errorHandler.setRetryListeners(
-                (record, exception, deliveryAttempt) -> {
-                    auditMetrics.retry(record.topic());
-                    log.warn(
-                            "Kafka processing failed topic={} partition={} offset={} attempt={}",
-                            record.topic(),
-                            record.partition(),
-                            record.offset(),
-                            deliveryAttempt,
-                            exception
-                    );
-                }
-        );
+        errorHandler.setRetryListeners(new RetryListener() {
+
+            @Override
+            public void failedDelivery(
+                    ConsumerRecord<?, ?> record,
+                    Exception exception,
+                    int deliveryAttempt) {
+
+                auditMetrics.retry(record.topic());
+
+                log.warn(
+                        "Kafka processing failed topic={} partition={} offset={} attempt={}",
+                        record.topic(),
+                        record.partition(),
+                        record.offset(),
+                        deliveryAttempt,
+                        exception
+                );
+            }
+
+            @Override
+            public void recovered(
+                    ConsumerRecord<?, ?> record,
+                    Exception exception) {
+
+                auditMetrics.dlt(record.topic());
+
+                log.error(
+                        "Kafka record moved to DLT sourceTopic={} dltTopic={} partition={} offset={}",
+                        record.topic(),
+                        record.topic() + ".dlt",
+                        record.partition(),
+                        record.offset(),
+                        exception
+                );
+            }
+
+            @Override
+            public void recoveryFailed(
+                    ConsumerRecord<?, ?> record,
+                    Exception original,
+                    Exception failure) {
+
+                log.error(
+                        "DLT publishing failed sourceTopic={} partition={} offset={}",
+                        record.topic(),
+                        record.partition(),
+                        record.offset(),
+                        failure
+                );
+            }
+        });
 
         return errorHandler;
     }

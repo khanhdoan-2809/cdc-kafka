@@ -1,0 +1,32 @@
+services:
+  transport-postgres:
+    restart: unless-stopped
+
+  audit-postgres:
+    restart: unless-stopped
+
+  kafka:
+    restart: unless-stopped
+
+  kafka-connect:
+    restart: unless-stopped
+
+  kafka-ui:
+    restart: unless-stopped
+
+  transport-service:
+    image: ${TRANSPORT_IMAGE}
+    restart: unless-stopped
+
+  audit-consumer:
+    image: ${AUDIT_IMAGE}
+    restart: unless-stopped
+
+  prometheus:
+    restart: unless-stopped
+
+  grafana:
+    restart: unless-stopped
+
+  postgres-exporter:
+    restart: unless-stopped

@@ -1,99 +1,66 @@
 name: CI
+
 on:
   pull_request:
-  push:
     branches:
+      - dev
       - main
 
   workflow_dispatch:
 
 permissions:
-  contents: read # condition for using GITHUB_TOKEN
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
+    name: Verify
+
     runs-on: ubuntu-latest
+
     steps:
-      - name: Check
-        uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6.0.1
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: temurin
+          java-version: "21"
           cache: maven
 
       - name: Make Maven wrapper executable
         run: chmod +x mvnw
 
-      - name: Verify
+      - name: Maven verify
         run: ./mvnw -B clean verify
 
   docker:
-    needs: verify
+    name: Docker - ${{ matrix.service }}
+
+    needs:
+      - verify
+
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         include:
-          - image: transport-service
+          - service: transport-service
             context: ./transport-service
-            dockerfile: Dockerfile
-          - image: audit-consumer
+
+          - service: audit-consumer
             context: ./audit-consumer
-            dockerfile: Dockerfile
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-      - name: Builder Docker Image
+        uses: actions/checkout@v7.0.1
+
+      - name: Build
         run: |
           docker build \
-            -f ${{ matrix.context }}/${{ matrix.dockerfile }} \
-            -t ${{ matrix.image }}:${{ github.sha }} \
-            ${{ matrix.context }}
-
-#  smoke-test:
-#    runs-on: ubuntu-latest
-#    needs: test
-#    steps:
-#      - name: Check
-#        uses: actions/checkout@v4
-#
-#      - name: Start application
-#        run: docker compose up --build -d
-#
-#      - name: Business smoke test
-#        run: |
-#          RESPONSE_HEADERS=$(mktemp)
-#          curl --fail \
-#            -D "$RESPONSE_HEADERS" \
-#            -X POST http://localhost:8080/api/transports \
-#            -H "Content-Type: application/json" \
-#            -H "X-User-Id: ci-user" \
-#            -H "X-Request-Id: ci-request-001" \
-#            -H "X-Correlation-Id: ci-flow-001" \
-#            -d '{"reference":"CI-TRANSPORT-001"}'
-#
-#          grep -i "X-Request-Id: ci-request-001" "$RESPONSE_HEADERS"
-#          grep -i "X-Correlation-Id: ci-flow-001" "$RESPONSE_HEADERS"
-
-#      - name: Wait for application
-#        run: |
-#          for i in {1..30}; do
-#            if curl --fail http://localhost:8080/actuator/health; then
-#              exit 0
-#            fi
-#
-#            sleep 2
-#          done
-#
-#          docker compose logs
-#          exit 1
-
-      - name: Shutdown application
-        if: always()
-        run: docker compose down -v
+            -t "${{ matrix.service }}:ci" \
+            "${{ matrix.context }}"

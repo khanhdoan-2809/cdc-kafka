@@ -4,9 +4,9 @@ services:
     container_name: transport-postgres
 
     environment:
-      POSTGRES_DB: transport
-      POSTGRES_USER: transport
-      POSTGRES_PASSWORD: transport
+      POSTGRES_DB: ${TRANSPORT_DB_NAME:-transport}
+      POSTGRES_USER: ${TRANSPORT_DB_USERNAME:-transport}
+      POSTGRES_PASSWORD: ${TRANSPORT_DB_PASSWORD:-transport}
     command:
       - postgres
       - -c
@@ -23,7 +23,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U transport -d transport"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -32,15 +32,15 @@ services:
     image: postgres:17
     container_name: audit-postgres
     environment:
-      POSTGRES_DB: audit
-      POSTGRES_USER: audit
-      POSTGRES_PASSWORD: audit
+      POSTGRES_DB: ${AUDIT_DB_NAME:-audit}
+      POSTGRES_USER: ${AUDIT_DB_USERNAME:-audit}
+      POSTGRES_PASSWORD: ${AUDIT_DB_PASSWORD:-audit}
     ports:
       - "5433:5432"
     volumes:
       - audit-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U audit -d audit" ]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -227,9 +227,9 @@ services:
     environment:
       DB_HOST: transport-postgres
       DB_PORT: 5432
-      DB_NAME: transport
-      DB_USERNAME: transport
-      DB_PASSWORD: transport
+      DB_NAME: ${TRANSPORT_DB_NAME:-transport}
+      DB_USERNAME: ${TRANSPORT_DB_USERNAME:-transport}
+      DB_PASSWORD: ${TRANSPORT_DB_PASSWORD:-transport}
     ports:
       - "8080:8080"
     depends_on:
@@ -255,9 +255,9 @@ services:
 
       AUDIT_DB_HOST: audit-postgres
       AUDIT_DB_PORT: 5432
-      AUDIT_DB_NAME: audit
-      AUDIT_DB_USERNAME: audit
-      AUDIT_DB_PASSWORD: audit
+      AUDIT_DB_NAME: ${AUDIT_DB_NAME:-audit}
+      AUDIT_DB_USERNAME: ${AUDIT_DB_USERNAME:-audit}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit}
 
       AUDIT_KAFKA_CONCURRENCY: 3
       AUDIT_KAFKA_MAX_POLL_RECORDS: 100
@@ -286,8 +286,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USERNAME:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -298,9 +298,9 @@ services:
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
     environment:
-      DATA_SOURCE_URI: transport-postgres:5432/transport?sslmode=disable
-      DATA_SOURCE_USER: transport
-      DATA_SOURCE_PASS: transport
+      DATA_SOURCE_URI: transport-postgres:5432/${TRANSPORT_DB_NAME:-transport}?sslmode=disable
+      DATA_SOURCE_USER: ${TRANSPORT_DB_USERNAME:-transport}
+      DATA_SOURCE_PASS: ${TRANSPORT_DB_PASSWORD:-transport}
     ports:
       - "9187:9187"
     depends_on:

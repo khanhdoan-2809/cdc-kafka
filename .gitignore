@@ -49,3 +49,9 @@ build/
 
 crash.log
 crash.*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.dev.example

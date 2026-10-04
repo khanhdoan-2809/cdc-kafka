@@ -304,3 +304,165 @@ resource "aws_iam_role_policy" "github_apply_state" {
 
   policy = data.aws_iam_policy_document.github_apply_state.json
 }
+
+# DEV
+locals {
+  github_main_subject = "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/main"
+  github_dev_subjects = [
+    "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/dev",
+    "repo:${var.github_owner}@*/${var.github_repository}@*:ref:refs/heads/dev"
+  ]
+}
+
+data "aws_iam_policy_document" "github_dev_deploy_assume_role" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRoleWithWebIdentity"
+    ]
+
+    principals {
+      type = "Federated"
+
+      identifiers = [
+        aws_iam_openid_connect_provider.github.arn
+      ]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+
+      values = [
+        "sts.amazonaws.com"
+      ]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+
+      values = local.github_dev_subjects
+    }
+  }
+}
+
+resource "aws_iam_role" "github_dev_deploy" {
+  name = "${var.project_name}-github-dev-deploy"
+
+  assume_role_policy = data.aws_iam_policy_document.github_dev_deploy_assume_role.json
+}
+
+resource "aws_iam_role" "github_dev_deploy" {
+  name = "${var.project_name}-github-dev-deploy"
+
+  assume_role_policy = data.aws_iam_policy_document.github_dev_deploy_assume_role.json
+}
+
+############ Github push the Docker Images ############
+data "aws_iam_policy_document" "github_dev_deploy" {
+  statement {
+    sid    = "EcrAuthorization"
+    effect = "Allow"
+
+    actions = [
+      "ecr:GetAuthorizationToken"
+    ]
+
+    resources = [
+      "*"
+    ]
+  }
+
+  statement {
+    sid    = "PushApplicationImages"
+    effect = "Allow"
+
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+      "ecr:DescribeImages"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-transport-service",
+      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-audit-consumer"
+    ]
+  }
+
+  statement {
+    sid    = "UseRunCommand"
+    effect = "Allow"
+
+    actions = [
+      "ssm:SendCommand"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}::document/AWS-RunShellScript"
+    ]
+  }
+
+  statement {
+    sid    = "DeployOnlyToDev"
+    effect = "Allow"
+
+    actions = [
+      "ssm:SendCommand"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
+    ]
+
+    condition {
+      test     = "StringLike"
+      variable = "ssm:resourceTag/Environment"
+
+      values = [
+        "dev"
+      ]
+    }
+  }
+
+  statement {
+    sid    = "ReadRunCommand"
+    effect = "Allow"
+
+    actions = [
+      "ssm:GetCommandInvocation",
+      "ssm:ListCommandInvocations",
+      "ssm:ListCommands"
+    ]
+
+    resources = [
+      "*"
+    ]
+  }
+
+  statement {
+    sid    = "FindDevInstance"
+    effect = "Allow"
+
+    actions = [
+      "ec2:DescribeInstances"
+    ]
+
+    resources = [
+      "*"
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "github_dev_deploy" {
+  name = "dev-deployment"
+  role = aws_iam_role.github_dev_deploy.id
+
+  policy = data.aws_iam_policy_document.github_dev_deploy.json
+}

@@ -304,3 +304,127 @@ resource "aws_iam_role_policy" "github_apply_state" {
 
   policy = data.aws_iam_policy_document.github_apply_state.json
 }
+
+############ Deployment Role ############
+
+data "aws_iam_policy_document" "github_deploy_assume_role" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRoleWithWebIdentity"
+    ]
+
+    principals {
+      type = "Federated"
+
+      identifiers = [
+        aws_iam_openid_connect_provider.github.arn
+      ]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+
+      values = [
+        "sts.amazonaws.com"
+      ]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+
+      values = local.github_production_subjects
+    }
+  }
+}
+
+resource "aws_iam_role" "github_deploy" {
+  name = "${var.project_name}-github-deploy"
+
+  assume_role_policy = data.aws_iam_policy_document.github_deploy_assume_role.json
+}
+
+############ ECR Push Permissions ############
+data "aws_iam_policy_document" "github_deploy" {
+  statement {
+    sid    = "EcrAuthorization"
+    effect = "Allow"
+
+    actions = [
+      "ecr:GetAuthorizationToken"
+    ]
+
+    resources = [
+      "*"
+    ]
+  }
+
+  statement {
+    sid    = "PushApplicationImages"
+    effect = "Allow"
+
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+      "ecr:DescribeImages"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-transport-service",
+      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-audit-consumer"
+    ]
+  }
+
+  statement {
+    sid    = "DeployTransportService"
+    effect = "Allow"
+
+    actions = [
+      "ecs:DescribeServices",
+      "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition",
+      "ecs:UpdateService"
+    ]
+
+    resources = [
+      "*"
+    ]
+  }
+
+  statement {
+    sid    = "PassProjectEcsRoles"
+    effect = "Allow"
+
+    actions = [
+      "iam:PassRole"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+
+      values = [
+        "ecs-tasks.amazonaws.com"
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "github_deploy" {
+  name = "application-deployment"
+  role = aws_iam_role.github_deploy.id
+
+  policy = data.aws_iam_policy_document.github_deploy.json
+}

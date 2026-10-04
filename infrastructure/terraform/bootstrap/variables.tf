@@ -10,6 +10,12 @@ variable "aws_region" {
   default     = "ap-southeast-1"
 }
 
+variable "environment" {
+  description = "Production environment name."
+  type        = string
+  default     = "prod"
+}
+
 ############ Github OIDC ############
 variable "github_owner" {
   description = "GitHub repository owner."
@@ -28,3 +34,4 @@ variable "github_environment" {
   type        = string
   default     = "production"
 }
+

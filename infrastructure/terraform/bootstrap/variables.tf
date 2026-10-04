@@ -9,3 +9,22 @@ variable "aws_region" {
   type        = string
   default     = "ap-southeast-1"
 }
+
+############ Github OIDC ############
+variable "github_owner" {
+  description = "GitHub repository owner."
+  type        = string
+  default     = "khanhdoan-2809"
+}
+
+variable "github_repository" {
+  description = "GitHub repository name."
+  type        = string
+  default     = "cdc-kafka"
+}
+
+variable "github_environment" {
+  description = "GitHub environment allowed to deploy production infrastructure."
+  type        = string
+  default     = "production"
+}

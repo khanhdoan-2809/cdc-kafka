@@ -20,3 +20,9 @@ output "github_terraform_apply_role_arn" {
   description = "GitHub Actions role used for Terraform apply."
   value       = aws_iam_role.github_terraform_apply.arn
 }
+
+############ Deployment ############
+output "github_deploy_role_arn" {
+  description = "GitHub Actions role used to deploy application releases."
+  value       = aws_iam_role.github_deploy.arn
+}

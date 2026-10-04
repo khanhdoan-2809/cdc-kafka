@@ -38,3 +38,13 @@ variable "dev_root_volume_size" {
   type        = number
   default     = 50
 }
+
+variable "developer_cidr" {
+  description = "Public IPv4 CIDR allowed to access DEV services."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.developer_cidr, 0))
+    error_message = "developer_cidr must be a valid CIDR, for example 203.0.113.10/32."
+  }
+}

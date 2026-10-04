@@ -5,13 +5,14 @@ on:
     branches:
       - dev
 
+  workflow_dispatch:
+
 permissions:
   contents: read
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-
   ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
 concurrency:
@@ -21,15 +22,14 @@ concurrency:
 jobs:
   verify:
     name: Verify
-
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v6.0.1
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -42,7 +42,7 @@ jobs:
         run: ./mvnw -B clean verify
 
   build:
-    name: Build - ${{ matrix.service }}
+    name: Build ${{ matrix.service }}
 
     needs:
       - verify
@@ -66,20 +66,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.3.0
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cdc-kafka-github-dev-deploy
           aws-region: ${{ vars.AWS_REGION }}
           allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
 
       - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2.1.6
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Check existing image
-        id: existing
+      - name: Check image
+        id: image
         shell: bash
         run: |
           if aws ecr describe-images \
@@ -93,20 +93,20 @@ jobs:
           fi
 
       - name: Build image
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.image.outputs.exists != 'true'
         run: |
           docker build \
             -t "${ECR_REGISTRY}/${{ matrix.repository }}:${GITHUB_SHA}" \
             "${{ matrix.context }}"
 
       - name: Push image
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.image.outputs.exists != 'true'
         run: |
           docker push \
             "${ECR_REGISTRY}/${{ matrix.repository }}:${GITHUB_SHA}"
 
   deploy:
-    name: Deploy
+    name: Deploy DEV
 
     needs:
       - build
@@ -119,13 +119,13 @@ jobs:
 
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.3.0
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cdc-kafka-github-dev-deploy
           aws-region: ${{ vars.AWS_REGION }}
           allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
 
-      - name: Find DEV instance
+      - name: Find DEV EC2
         id: instance
         shell: bash
         run: |
@@ -140,7 +140,7 @@ jobs:
           )"
 
           if [[ -z "${INSTANCE_ID}" || "${INSTANCE_ID}" == "None" ]]; then
-            echo "Running DEV EC2 instance not found"
+            echo "DEV EC2 instance not found"
             exit 1
           fi
 
@@ -151,110 +151,35 @@ jobs:
           INSTANCE_ID: ${{ steps.instance.outputs.instance_id }}
         shell: bash
         run: |
-          REMOTE_COMMAND=$(cat <<EOF
-          set -euo pipefail
-
-          dnf install -y docker git curl openssl
-
-          systemctl enable --now docker
-
-          mkdir -p /usr/local/lib/docker/cli-plugins
-
-          if ! docker compose version >/dev/null 2>&1; then
-            curl -fsSL \
-              https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
-              -o /usr/local/lib/docker/cli-plugins/docker-compose
-
-            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-          fi
-
-          if [[ ! -d /opt/cdc-kafka/.git ]]; then
-            rm -rf /opt/cdc-kafka
-
-            git clone \
-              https://github.com/${GITHUB_REPOSITORY}.git \
-              /opt/cdc-kafka
-          fi
-
-          cd /opt/cdc-kafka
-
-          git fetch --prune origin
-          git reset --hard ${GITHUB_SHA}
-
-          chmod +x scripts/deploy-dev.sh
-
-          ./scripts/deploy-dev.sh \
-            ${AWS_REGION} \
-            ${ECR_REGISTRY} \
-            ${GITHUB_SHA}
-          EOF
-          )
-
-          PARAMETERS="$(
-            jq -n \
-              --arg command "${REMOTE_COMMAND}" \
-              '{commands: [$command]}'
-          )"
-
           COMMAND_ID="$(
             aws ssm send-command \
               --instance-ids "${INSTANCE_ID}" \
               --document-name "AWS-RunShellScript" \
-              --comment "Deploy DEV ${GITHUB_SHA}" \
-              --parameters "${PARAMETERS}" \
+              --parameters "commands=[
+                'cd /opt/cdc-kafka',
+                'git fetch origin dev',
+                'git reset --hard ${GITHUB_SHA}',
+                'chmod +x scripts/deploy-dev.sh',
+                './scripts/deploy-dev.sh ${AWS_REGION} ${ECR_REGISTRY} ${GITHUB_SHA}'
+              ]" \
               --query "Command.CommandId" \
               --output text
           )"
 
-          echo "SSM command: ${COMMAND_ID}"
-
-          for _ in {1..120}; do
-            STATUS="$(
-              aws ssm get-command-invocation \
-                --command-id "${COMMAND_ID}" \
-                --instance-id "${INSTANCE_ID}" \
-                --query Status \
-                --output text \
-                2>/dev/null || true
-            )"
-
-            case "${STATUS}" in
-              Success)
-                break
-                ;;
-
-              Failed|Cancelled|TimedOut)
-                aws ssm get-command-invocation \
-                  --command-id "${COMMAND_ID}" \
-                  --instance-id "${INSTANCE_ID}"
-
-                exit 1
-                ;;
-            esac
-
-            sleep 5
-          done
-
-          FINAL_STATUS="$(
-            aws ssm get-command-invocation \
-              --command-id "${COMMAND_ID}" \
-              --instance-id "${INSTANCE_ID}" \
-              --query Status \
-              --output text
-          )"
-
-          if [[ "${FINAL_STATUS}" != "Success" ]]; then
-            echo "DEV deployment did not finish successfully"
-
-            aws ssm get-command-invocation \
-              --command-id "${COMMAND_ID}" \
-              --instance-id "${INSTANCE_ID}"
-
-            exit 1
-          fi
+          aws ssm wait command-executed \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}"
 
           aws ssm get-command-invocation \
             --command-id "${COMMAND_ID}" \
             --instance-id "${INSTANCE_ID}" \
-            --query StandardOutputContent \
+            --query "StandardOutputContent" \
             --output text
+
+      - name: Show deployment output
+        if: always()
+        env:
+          INSTANCE_ID: ${{ steps.instance.outputs.instance_id }}
+        shell: bash
+        run: |
+          echo "DEV deployment finished for commit ${GITHUB_SHA}"

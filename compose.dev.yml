@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
 
   kafka:
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:19092,PLAINTEXT_HOST://${DEV_PUBLIC_HOST:?DEV_PUBLIC_HOST is required}:9092"
     restart: unless-stopped
 
   kafka-connect:

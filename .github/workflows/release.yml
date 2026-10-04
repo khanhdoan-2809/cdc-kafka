@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+  TRANSPORT_ECR_REPOSITORY: cdc-kafka-transport-service
+  AUDIT_ECR_REPOSITORY: cdc-kafka-audit-consumer
+
+  ECS_CLUSTER: cdc-kafka-prod
+  ECS_SERVICE: transport-service
+  ECS_TASK_FAMILY: cdc-kafka-prod-transport-service
+  ECS_CONTAINER_NAME: transport-service
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Verify release commit is on main
+        shell: bash
+        run: |
+          git fetch origin main
+
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "Release tag must point to a commit already merged into main."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2.1.7
+
+      - name: Prepare image names
+        id: images
+        shell: bash
+        run: |
+          echo "transport=${{ steps.ecr.outputs.registry }}/${TRANSPORT_ECR_REPOSITORY}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "audit=${{ steps.ecr.outputs.registry }}/${AUDIT_ECR_REPOSITORY}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push transport-service
+        shell: bash
+        run: |
+          if aws ecr describe-images \
+            --repository-name "${TRANSPORT_ECR_REPOSITORY}" \
+            --image-ids imageTag="${GITHUB_REF_NAME}" \
+            >/dev/null 2>&1; then
+
+            echo "${GITHUB_REF_NAME} already exists in ${TRANSPORT_ECR_REPOSITORY}; reusing immutable image."
+          else
+            docker build \
+              -t "${{ steps.images.outputs.transport }}" \
+              ./transport-service
+
+            docker push "${{ steps.images.outputs.transport }}"
+          fi
+
+      - name: Build and push audit-consumer
+        shell: bash
+        run: |
+          if aws ecr describe-images \
+            --repository-name "${AUDIT_ECR_REPOSITORY}" \
+            --image-ids imageTag="${GITHUB_REF_NAME}" \
+            >/dev/null 2>&1; then
+
+            echo "${GITHUB_REF_NAME} already exists in ${AUDIT_ECR_REPOSITORY}; reusing immutable image."
+          else
+            docker build \
+              -t "${{ steps.images.outputs.audit }}" \
+              ./audit-consumer
+
+            docker push "${{ steps.images.outputs.audit }}"
+          fi
+
+      - name: Download current transport task definition
+        shell: bash
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${ECS_TASK_FAMILY}" \
+            --query taskDefinition \
+            > transport-task-definition.json
+
+      - name: Render transport task definition
+        id: transport-task-definition
+        uses: aws-actions/amazon-ecs-render-task-definition@v1.9.0
+        with:
+          task-definition: transport-task-definition.json
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ steps.images.outputs.transport }}
+
+      - name: Deploy transport task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2.6.3
+        with:
+          task-definition: ${{ steps.transport-task-definition.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

@@ -1,0 +1,157 @@
+name: Terraform
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infrastructure/terraform/**"
+      - ".github/workflows/terraform.yml"
+
+  push:
+    branches:
+      - main
+    paths:
+      - "infrastructure/terraform/**"
+      - ".github/workflows/terraform.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+  TF_VAR_aws_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+
+defaults:
+  run:
+    working-directory: infrastructure/terraform/prod
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: "1.14.0"
+
+      - name: Terraform format
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      - validate
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: "1.14.0"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Terraform init
+        run: |
+          terraform init \
+            -reconfigure \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=prod/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -lock-timeout=5m \
+            -no-color
+
+  apply:
+    name: Apply
+    runs-on: ubuntu-latest
+
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+
+    needs:
+      - validate
+
+    environment:
+      name: production
+
+    concurrency:
+      group: terraform-production
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: "1.14.0"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Terraform init
+        run: |
+          terraform init \
+          -reconfigure \
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+          -backend-config="key=prod/terraform.tfstate" \
+          -backend-config="region=${{ vars.AWS_REGION }}" \
+          -backend-config="encrypt=true" \
+          -backend-config="use_lockfile=true"
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -lock-timeout=5m \
+            -out=tfplan
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve tfplan

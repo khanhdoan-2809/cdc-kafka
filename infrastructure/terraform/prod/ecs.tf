@@ -143,6 +143,12 @@ resource "aws_ecs_service" "transport" {
 
   enable_ecs_managed_tags = true
 
+  lifecycle {
+    ignore_changes = [
+      task_definition # not always deploy
+    ]
+  }
+
   depends_on = [
     aws_lb_listener.http
   ]

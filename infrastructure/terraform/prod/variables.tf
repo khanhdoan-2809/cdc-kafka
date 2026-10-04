@@ -66,3 +66,28 @@ variable "db_multi_az" {
   type        = bool
   default     = false
 }
+
+############ ECS ############
+variable "transport_container_port" {
+  description = "Port exposed by transport-service."
+  type        = number
+  default     = 8080
+}
+
+variable "transport_task_cpu" {
+  description = "Fargate CPU units for transport-service."
+  type        = number
+  default     = 512
+}
+
+variable "transport_task_memory" {
+  description = "Fargate memory in MiB for transport-service."
+  type        = number
+  default     = 1024
+}
+
+variable "transport_desired_count" {
+  description = "Number of transport-service ECS tasks."
+  type        = number
+  default     = 0
+}

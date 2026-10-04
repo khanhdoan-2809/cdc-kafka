@@ -86,3 +86,39 @@ output "rds_master_secret_arn" {
 
   sensitive = true
 }
+
+############ ALB & ECS Outputs ############
+output "alb_dns_name" {
+  description = "Public DNS name of the transport-service ALB."
+  value       = aws_lb.transport.dns_name
+}
+
+output "alb_url" {
+  description = "HTTP URL for the transport-service ALB."
+  value       = "http://${aws_lb.transport.dns_name}"
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster name."
+  value       = aws_ecs_cluster.main.name
+}
+
+output "transport_ecs_service_name" {
+  description = "transport-service ECS service name."
+  value       = aws_ecs_service.transport.name
+}
+
+output "transport_task_definition_family" {
+  description = "transport-service task definition family."
+  value       = aws_ecs_task_definition.transport.family
+}
+
+output "transport_ecs_security_group_id" {
+  description = "Security group used by transport-service ECS tasks."
+  value       = aws_security_group.transport_ecs.id
+}
+
+output "alb_security_group_id" {
+  description = "Security group used by the public ALB."
+  value       = aws_security_group.alb.id
+}

@@ -76,3 +76,28 @@ resource "aws_db_instance" "postgres" {
     Name = "${var.project_name}-${var.environment}-postgres"
   }
 }
+
+# Allow ECS to RDS
+resource "aws_vpc_security_group_ingress_rule" "rds_from_transport" {
+  security_group_id = aws_security_group.rds.id
+
+  referenced_security_group_id = aws_security_group.transport_ecs.id
+
+  description = "Allow PostgreSQL access from transport-service"
+
+  ip_protocol = "tcp"
+  from_port   = 5432
+  to_port     = 5432
+}
+
+resource "aws_vpc_security_group_ingress_rule" "rds_from_transport" {
+  security_group_id = aws_security_group.rds.id
+
+  referenced_security_group_id = aws_security_group.transport_ecs.id
+
+  description = "Allow PostgreSQL access from transport-service"
+
+  ip_protocol = "tcp"
+  from_port   = 5432
+  to_port     = 5432
+}

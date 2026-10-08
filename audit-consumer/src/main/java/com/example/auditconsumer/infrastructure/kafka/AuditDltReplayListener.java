@@ -4,12 +4,18 @@ import com.example.auditconsumer.infrastructure.observability.AuditMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(
+        prefix = "audit.kafka.dlt-replay",
+        name = "enabled",
+        havingValue = "true"
+)
 public class AuditDltReplayListener {
 
     private final DltRecordMetadataReader metadataReader;
@@ -17,17 +23,16 @@ public class AuditDltReplayListener {
     private final AuditMetrics auditMetrics;
 
     @KafkaListener(
-            id = "audit-dlt-relay",
+            id = "audit-dlt-replay",
             groupId = "${audit.kafka.dlt-replay.group-id}",
             topics = {
                     "${audit.kafka.topics.transport}.dlt",
                     "${audit.kafka.topics.job}.dlt",
                     "${audit.kafka.topics.container}.dlt"
             },
-            containerFactory = "dltReplayKafkaListenerContainerFactory",
-            autoStartup = "${audit.kafka.dlt-replay.enabled:false}"
+            containerFactory = "dltReplayKafkaListenerContainerFactory"
     )
-    public void relay(ConsumerRecord<String, String> record) {
+    public void replay(ConsumerRecord<String, String> record) {
         if (record.value() == null) {
             throw new IllegalStateException(
                     "DLT record has null payload topic=%s partition=%d offset=%d"

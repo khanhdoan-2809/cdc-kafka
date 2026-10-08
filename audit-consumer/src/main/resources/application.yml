@@ -68,6 +68,6 @@ audit:
       partitions: ${AUDIT_DLT_PARTITIONS:3}
       replication-factor: ${AUDIT_DLT_REPLICATION_FACTOR:1}
 
-    dlt-relay:
+    dlt-replay:
       enabled: ${AUDIT_DLT_REPLAY_ENABLED:false}
       group-id: ${AUDIT_DLT_REPLAY_GROUP_ID:audit-dlt-replay}

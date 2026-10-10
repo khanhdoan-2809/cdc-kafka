@@ -10,19 +10,31 @@ output "aws_region" {
   value = var.aws_region
 }
 
-############ Github OIDC ############
+############ GitHub OIDC ############
+
 output "github_terraform_plan_role_arn" {
   description = "GitHub Actions role used for Terraform plans."
   value       = aws_iam_role.github_terraform_plan.arn
 }
 
 output "github_terraform_apply_role_arn" {
-  description = "GitHub Actions role used for Terraform apply."
+  description = "GitHub Actions role used for production Terraform apply."
   value       = aws_iam_role.github_terraform_apply.arn
 }
 
+output "github_terraform_dev_apply_role_arn" {
+  description = "GitHub Actions role used for DEV Terraform apply."
+  value       = aws_iam_role.github_terraform_dev_apply.arn
+}
+
 ############ Deployment ############
+
 output "github_deploy_role_arn" {
-  description = "GitHub Actions role used to deploy application releases."
+  description = "GitHub Actions role used to deploy production application releases."
   value       = aws_iam_role.github_deploy.arn
+}
+
+output "github_dev_deploy_role_arn" {
+  description = "GitHub Actions role used to deploy DEV application images."
+  value       = aws_iam_role.github_dev_deploy.arn
 }

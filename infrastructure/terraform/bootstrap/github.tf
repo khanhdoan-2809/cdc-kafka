@@ -14,6 +14,11 @@ locals {
     "repo:${var.github_owner}@*/${var.github_repository}@*:pull_request"
   ]
 
+  github_dev_subjects = [
+    "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/dev",
+    "repo:${var.github_owner}@*/${var.github_repository}@*:ref:refs/heads/dev"
+  ]
+
   github_production_subjects = [
     "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_environment}",
     "repo:${var.github_owner}@*/${var.github_repository}@*:environment:${var.github_environment}"
@@ -92,6 +97,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
+      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate",
       "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate"
     ]
   }
@@ -106,6 +112,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
+      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate.tflock",
       "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate.tflock"
     ]
   }
@@ -438,6 +445,8 @@ locals {
   ]
 }
 
+############ DEV Application Deployment Role ############
+
 data "aws_iam_policy_document" "github_dev_deploy_assume_role" {
   statement {
     effect = "Allow"
@@ -477,6 +486,8 @@ resource "aws_iam_role" "github_dev_deploy" {
 
   assume_role_policy = data.aws_iam_policy_document.github_dev_deploy_assume_role.json
 }
+
+###########
 
 resource "aws_iam_role" "github_dev_deploy" {
   name = "${var.project_name}-github-dev-deploy"
@@ -589,4 +600,175 @@ resource "aws_iam_role_policy" "github_dev_deploy" {
   role = aws_iam_role.github_dev_deploy.id
 
   policy = data.aws_iam_policy_document.github_dev_deploy.json
+}
+
+############ DEV Terraform Apply Role ############
+
+data "aws_iam_policy_document" "github_dev_apply_assume_role" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRoleWithWebIdentity"
+    ]
+
+    principals {
+      type = "Federated"
+
+      identifiers = [
+        aws_iam_openid_connect_provider.github.arn
+      ]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+
+      values = [
+        "sts.amazonaws.com"
+      ]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+
+      values = local.github_dev_subjects
+    }
+  }
+}
+
+resource "aws_iam_role" "github_terraform_dev_apply" {
+  name = "${var.project_name}-github-terraform-dev-apply"
+
+  assume_role_policy  = data.aws_iam_policy_document.github_dev_apply_assume_role.json
+  max_session_duration = 3600
+}
+
+resource "aws_iam_role_policy_attachment" "github_dev_apply_power_user" {
+  role       = aws_iam_role.github_terraform_dev_apply.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/PowerUserAccess"
+}
+
+data "aws_iam_policy_document" "github_dev_apply_iam" {
+  statement {
+    sid    = "ManageDevRole"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:GetRole",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:ListInstanceProfilesForRole"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-dev-*"
+    ]
+  }
+
+  statement {
+    sid    = "ManageDevInstanceProfile"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.project_name}-dev-*"
+    ]
+  }
+
+  statement {
+    sid    = "PassDevRoleToEc2"
+    effect = "Allow"
+
+    actions = [
+      "iam:PassRole"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-dev-*"
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+
+      values = [
+        "ec2.amazonaws.com"
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "github_dev_apply_iam" {
+  name   = "dev-iam"
+  role   = aws_iam_role.github_terraform_dev_apply.id
+  policy = data.aws_iam_policy_document.github_dev_apply_iam.json
+}
+
+data "aws_iam_policy_document" "github_dev_apply_state" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket"
+    ]
+
+    resources = [
+      aws_s3_bucket.terraform_state.arn
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject"
+    ]
+
+    resources = [
+      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate"
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject"
+    ]
+
+    resources = [
+      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate.tflock"
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "github_dev_apply_state" {
+  name   = "terraform-state"
+  role   = aws_iam_role.github_terraform_dev_apply.id
+  policy = data.aws_iam_policy_document.github_dev_apply_state.json
 }

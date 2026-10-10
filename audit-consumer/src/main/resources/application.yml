@@ -13,22 +13,19 @@ spring:
 
   flyway:
     enabled: true
-#    url: jdbc:postgresql://${AUDIT_DB_HOST:localhost}:${AUDIT_DB_PORT:5433}/${AUDIT_DB_NAME:audit}
-#    user: ${AUDIT_DB_USERNAME:audit}
-#    password: ${AUDIT_DB_PASSWORD:audit}
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
-      group-id: audit-consumer
-      auto-offset-reset: earliest
+      group-id: audit-consumer # consumer group
+      auto-offset-reset: earliest # where to start reading when a consumer has no valid saved offsets for a partition => read the oldest available message
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       max-poll-records: ${AUDIT_KAFKA_MAX_POLL_RECORDS:100}
     listener:
-      concurrency: ${AUDIT_KAFKA_CONCURRENCY:3}
-      ack-mode: record
+      concurrency: ${AUDIT_KAFKA_CONCURRENCY:3} # consumer threads
+      ack-mode: record # Commit the offset after each record listener call returns successfully
 
 server:
   port: ${SERVER_PORT:8081}

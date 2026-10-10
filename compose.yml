@@ -60,19 +60,28 @@ services:
     ports:
       - "9092:9092"
     environment:
+      # Unique identity for kafka cluster
       CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
 
+      # Unique identity of this node in the cluster
       KAFKA_NODE_ID: 1
+      # broker: receives producer messages, stores partitions, serves consumers; controller: manages metadata, such as topics, partitions, and partition leaders.
       KAFKA_PROCESS_ROLES: "broker,controller"
 
+      # controller node id + hostname + controller communication port
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
 
+      # Listener security protocols
+      # CONTROLLER: controller traffic; PLAINTEXT: docker client and broker traffic; PLAINTEXT_HOST: clients on your computer
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
 
       KAFKA_LISTENERS: "CONTROLLER://:9093,PLAINTEXT://:19092,PLAINTEXT_HOST://:9092"
 
+      # tell Kafka which addresses to return to clients
+      # same Docker network: kafka:19092, my computer: localhost:9092
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:19092,PLAINTEXT_HOST://localhost:9092"
 
+      # Selecting listeners for Kafka’s internal communication
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
 

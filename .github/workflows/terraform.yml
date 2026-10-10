@@ -48,7 +48,7 @@ jobs:
         run: terraform fmt -check -recursive
 
       - name: Terraform init
-        run: terraform init -backend=false
+        run: terraform init -backend=false # no need terraform backend for validate
 
       - name: Terraform validate
         run: terraform validate

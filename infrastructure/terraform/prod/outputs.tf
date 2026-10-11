@@ -154,3 +154,25 @@ output "db_bootstrap_log_group_name" {
   description = "CloudWatch log group for database bootstrap."
   value       = aws_cloudwatch_log_group.db_bootstrap.name
 }
+
+############ MSK Outputs ############
+
+output "msk_cluster_arn" {
+  description = "ARN of the production MSK Serverless cluster."
+  value       = aws_msk_serverless_cluster.main.arn
+}
+
+output "msk_bootstrap_brokers" {
+  description = "IAM bootstrap brokers for the production MSK Serverless cluster."
+  value       = aws_msk_serverless_cluster.main.bootstrap_brokers_sasl_iam
+}
+
+output "msk_security_group_id" {
+  description = "Security group attached to the MSK Serverless cluster."
+  value       = aws_security_group.msk.id
+}
+
+output "msk_client_security_group_id" {
+  description = "Security group to attach to applications that connect to MSK."
+  value       = aws_security_group.msk_client.id
+}

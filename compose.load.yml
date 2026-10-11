@@ -1,0 +1,18 @@
+services:
+  k6:
+    image: grafana/k6:2.3.0
+
+    profiles:
+      - load
+
+    environment:
+      K6_BASE_URL: ${K6_BASE_URL:-http://transport-service:8080}
+      K6_PROFILE: ${K6_PROFILE:-baseline}
+
+    volumes:
+      - ./load/k6:/scripts:ro
+
+    entrypoint:
+      - k6
+      - run
+      - /scripts/cdc-flow.js

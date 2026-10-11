@@ -25,9 +25,7 @@ public class DltReplayKafkaConfiguration {
         factory.setConsumerFactory(consumerFactory);
         factory.setConcurrency(1);
         factory.setCommonErrorHandler(new CommonContainerStoppingErrorHandler());
-
-        factory.getContainerProperties()
-                .setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
 
         return factory;
     }

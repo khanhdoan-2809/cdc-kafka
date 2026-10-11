@@ -7,19 +7,36 @@ ACTION="${1:-status}"
 cd /opt/cdc-kafka
 
 if [[ ! -f .env.dev ]]; then
-  echo ".env.dev does not exist"
+  echo ".env.dev not found"
   exit 1
 fi
 
-export TRANSPORT_IMAGE="$(
-  docker inspect transport-service \
+AUDIT_CONTAINER="$(
+  docker compose ps -q audit-consumer \
+    | head -n 1
+)"
+
+if [[ -z "${AUDIT_CONTAINER}" ]]; then
+  echo "audit-consumer is not running"
+  exit 1
+fi
+
+export AUDIT_IMAGE="$(
+  docker inspect "${AUDIT_CONTAINER}" \
     --format '{{.Config.Image}}'
 )"
 
-export AUDIT_IMAGE="$(
-  docker inspect audit-consumer \
-    --format '{{.Config.Image}}'
+TRANSPORT_CONTAINER="$(
+  docker compose ps -q transport-service \
+    | head -n 1
 )"
+
+if [[ -n "${TRANSPORT_CONTAINER}" ]]; then
+  export TRANSPORT_IMAGE="$(
+    docker inspect "${TRANSPORT_CONTAINER}" \
+      --format '{{.Config.Image}}'
+  )"
+fi
 
 TOKEN="$(
   curl -fsS \
@@ -39,46 +56,43 @@ COMPOSE=(
   --env-file .env.dev
   -f compose.yml
   -f compose.dev.yml
+  --profile ops
 )
 
 case "${ACTION}" in
   start)
-    echo "Enabling DLT replay"
-
-    export AUDIT_DLT_REPLAY_ENABLED=true
+    echo "Starting DLT replay worker"
 
     "${COMPOSE[@]}" up \
       -d \
       --no-deps \
-      --force-recreate \
-      audit-consumer
+      audit-dlt-replay
 
-    echo "DLT replay enabled"
+    echo
+    "${COMPOSE[@]}" ps audit-dlt-replay
     ;;
 
   stop)
-    echo "Disabling DLT replay"
+    echo "Stopping DLT replay worker"
 
-    export AUDIT_DLT_REPLAY_ENABLED=false
+    "${COMPOSE[@]}" stop audit-dlt-replay
+    "${COMPOSE[@]}" rm -f audit-dlt-replay
 
-    "${COMPOSE[@]}" up \
-      -d \
-      --no-deps \
-      --force-recreate \
-      audit-consumer
-
-    echo "DLT replay disabled"
+    echo "DLT replay worker stopped"
     ;;
 
   status)
-    docker inspect audit-consumer \
-      --format '{{range .Config.Env}}{{println .}}{{end}}' \
-      | grep '^AUDIT_DLT_REPLAY_ENABLED=' \
-      || true
+    "${COMPOSE[@]}" ps audit-dlt-replay
+    ;;
+
+  logs)
+    "${COMPOSE[@]}" logs \
+      -f \
+      audit-dlt-replay
     ;;
 
   *)
-    echo "Usage: $0 {start|stop|status}"
+    echo "Usage: $0 {start|stop|status|logs}"
     exit 1
     ;;
 esac

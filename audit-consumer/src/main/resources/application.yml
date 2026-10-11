@@ -64,6 +64,9 @@ management:
 
 audit:
   kafka:
+    consumer:
+      enabled: ${AUDIT_KAFKA_CONSUMER_ENABLED:true}
+
     topics:
       transport: transport.public.transport
       job: transport.public.job

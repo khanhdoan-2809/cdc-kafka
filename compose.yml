@@ -232,18 +232,26 @@ services:
   transport-service:
     build:
       context: ./transport-service
+
     container_name: transport-service
+
     environment:
       DB_HOST: transport-postgres
       DB_PORT: 5432
       DB_NAME: ${TRANSPORT_DB_NAME:-transport}
       DB_USERNAME: ${TRANSPORT_DB_USERNAME:-transport}
       DB_PASSWORD: ${TRANSPORT_DB_PASSWORD:-transport}
+
+      TRANSPORT_DB_MAX_POOL_SIZE: ${TRANSPORT_DB_MAX_POOL_SIZE:-10}
+      TRANSPORT_DB_MIN_IDLE: ${TRANSPORT_DB_MIN_IDLE:-2}
+
     ports:
       - "8080:8080"
+
     depends_on:
       transport-postgres:
         condition: service_healthy
+
     healthcheck:
       test:
         [
@@ -255,10 +263,14 @@ services:
       retries: 20
       start_period: 20s
 
+    restart: unless-stopped
+
   audit-consumer:
     build:
       context: ./audit-consumer
+
     container_name: audit-consumer
+
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
 
@@ -268,20 +280,28 @@ services:
       AUDIT_DB_USERNAME: ${AUDIT_DB_USERNAME:-audit}
       AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit}
 
-      AUDIT_KAFKA_CONCURRENCY: 3
-      AUDIT_KAFKA_MAX_POLL_RECORDS: 100
+      AUDIT_DB_MAX_POOL_SIZE: ${AUDIT_DB_MAX_POOL_SIZE:-10}
+      AUDIT_DB_MIN_IDLE: ${AUDIT_DB_MIN_IDLE:-2}
+
+      AUDIT_KAFKA_CONCURRENCY: ${AUDIT_KAFKA_CONCURRENCY:-3}
+      AUDIT_KAFKA_MAX_POLL_RECORDS: ${AUDIT_KAFKA_MAX_POLL_RECORDS:-100}
+      AUDIT_KAFKA_MAX_POLL_INTERVAL_MS: ${AUDIT_KAFKA_MAX_POLL_INTERVAL_MS:-300000}
 
       AUDIT_DLT_REPLAY_ENABLED: ${AUDIT_DLT_REPLAY_ENABLED:-false}
       AUDIT_DLT_REPLAY_GROUP_ID: ${AUDIT_DLT_REPLAY_GROUP_ID:-audit-dlt-replay}
 
       SERVER_PORT: 8081
+
     ports:
       - "8081:8081"
+
     depends_on:
       kafka:
         condition: service_healthy
+
       audit-postgres:
         condition: service_healthy
+
     restart: unless-stopped
 
   prometheus:

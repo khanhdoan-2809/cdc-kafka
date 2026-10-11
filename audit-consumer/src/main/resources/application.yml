@@ -8,24 +8,32 @@ spring:
     password: ${AUDIT_DB_PASSWORD:audit}
 
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+      maximum-pool-size: ${AUDIT_DB_MAX_POOL_SIZE:10}
+      minimum-idle: ${AUDIT_DB_MIN_IDLE:2}
+      connection-timeout: ${AUDIT_DB_CONNECTION_TIMEOUT_MS:30000}
 
   flyway:
     enabled: true
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
     consumer:
       group-id: audit-consumer # consumer group
       auto-offset-reset: earliest # where to start reading when a consumer has no valid saved offsets for a partition => read the oldest available message
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
       max-poll-records: ${AUDIT_KAFKA_MAX_POLL_RECORDS:100}
+
+      properties:
+        # Maximum delay between consumer poll() calls -> consumer processes excess delay -> consumer not health -> kafka trigger a rebalance
+        max.poll.interval.ms: ${AUDIT_KAFKA_MAX_POLL_INTERVAL_MS:300000}
+
     listener:
-      concurrency: ${AUDIT_KAFKA_CONCURRENCY:3} # consumer threads
-      ack-mode: record # Commit the offset after each record listener call returns successfully
+      concurrency: ${AUDIT_KAFKA_CONCURRENCY:3}
+      ack-mode: record
 
 server:
   port: ${SERVER_PORT:8081}
@@ -39,15 +47,18 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+
   endpoint:
     health:
       probes:
         enabled: true
+
   metrics:
     distribution:
       percentiles-histogram:
         audit.cdc.end.to.end: true
         spring.kafka.listener: true
+
     tags:
       application: ${spring.application.name}
 

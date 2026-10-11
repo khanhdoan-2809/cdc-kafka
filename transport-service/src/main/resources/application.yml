@@ -37,7 +37,7 @@ management:
   metrics:
     distribution:
       percentiles-histogram:
-        audit.cdc.end.to.end: true
+        http.server.requests: true
     tags:
       application: ${spring.application.name}
 

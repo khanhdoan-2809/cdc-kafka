@@ -102,6 +102,8 @@ public class KafkaErrorConfiguration {
                     Exception original,
                     Exception failure) {
 
+                auditMetrics.dltPublishFailed(record.topic());
+
                 log.error(
                         "DLT publishing failed sourceTopic={} partition={} offset={}",
                         record.topic(),

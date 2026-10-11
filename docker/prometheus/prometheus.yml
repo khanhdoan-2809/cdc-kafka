@@ -5,8 +5,8 @@ scrape_configs:
   - job_name: transport-service
     metrics_path: /actuator/prometheus
     static_configs:
-       - targets:
-         - transport-service:8080
+      - targets:
+          - transport-service:8080
 
   - job_name: audit-consumer
     metrics_path: /actuator/prometheus
@@ -14,7 +14,12 @@ scrape_configs:
       - targets:
           - audit-consumer:8081
 
-  - job_name: postgres
+  - job_name: transport-postgres
     static_configs:
       - targets:
           - postgres-exporter:9187
+
+  - job_name: audit-postgres
+    static_configs:
+      - targets:
+          - audit-postgres-exporter:9187

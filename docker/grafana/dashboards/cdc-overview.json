@@ -69,12 +69,11 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "editorMode": "code",
           "expr": "up{job=~\"transport-service|audit-consumer|transport-postgres|audit-postgres\"}",
-          "legendFormat": "{{job}}",
+          "legendFormat": "{{job}} / {{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -89,9 +88,9 @@
       },
       "fieldConfig": {
         "defaults": {
-          "decimals": 2,
+          "decimals": 0,
           "mappings": [],
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -104,7 +103,7 @@
       "id": 2,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -118,17 +117,16 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(audit_events_processed_total{result=\"INSERTED\"}[1m]))",
-          "legendFormat": "inserted/sec",
+          "expr": "count(up{job=\"audit-consumer\"} == 1)",
+          "legendFormat": "replicas",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "CDC Throughput",
+      "title": "Audit Consumer Replicas",
       "type": "stat"
     },
     {
@@ -138,9 +136,9 @@
       },
       "fieldConfig": {
         "defaults": {
-          "decimals": 0,
+          "decimals": 2,
           "mappings": [],
-          "unit": "short"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -167,17 +165,16 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max(kafka_consumer_fetch_manager_records_lag_max{application=\"audit-consumer\"})",
-          "legendFormat": "max lag",
+          "expr": "sum(rate(audit_events_processed_total{result=\"INSERTED\"}[1m]))",
+          "legendFormat": "events/sec",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Kafka Consumer Lag",
+      "title": "CDC Throughput",
       "type": "stat"
     },
     {
@@ -216,17 +213,16 @@
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(increase(audit_kafka_dlt_total[15m]))",
-          "legendFormat": "DLT records",
+          "expr": "max(kafka_consumer_fetch_manager_records_lag_max{application=\"audit-consumer\"})",
+          "legendFormat": "max lag",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "DLT Events - Last 15m",
+      "title": "Kafka Consumer Lag",
       "type": "stat"
     },
     {
@@ -786,15 +782,17 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 21
       },
       "id": 12,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -806,13 +804,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * sum by (application) (hikaricp_connections_active) / sum by (application) (hikaricp_connections_max)",
-          "legendFormat": "{{application}}",
+          "expr": "100 * sum by (application, instance) (hikaricp_connections_active) / sum by (application, instance) (hikaricp_connections_max)",
+          "legendFormat": "{{application}} / {{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Hikari Connection Pool Utilization",
+      "title": "Hikari Pool Utilization by Instance",
       "type": "timeseries"
     },
     {
@@ -859,15 +857,17 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 21
       },
       "id": 13,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -932,15 +932,17 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 21
+        "w": 12,
+        "x": 0,
+        "y": 29
       },
       "id": 14,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -952,13 +954,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (application) (jvm_memory_used_bytes{area=\"heap\"})",
-          "legendFormat": "{{application}}",
+          "expr": "sum by (application, instance) (jvm_memory_used_bytes{area=\"heap\"})",
+          "legendFormat": "{{application}} / {{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "JVM Heap Used",
+      "title": "JVM Heap by Instance",
       "type": "timeseries"
     },
     {
@@ -1006,13 +1008,15 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 29
       },
       "id": 15,
       "options": {
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "lastNotNull"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -1079,8 +1083,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 29
+        "x": 0,
+        "y": 37
       },
       "id": 16,
       "options": {
@@ -1106,6 +1110,486 @@
       ],
       "title": "Audit Events by Entity / Operation",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 37
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(audit_events_processed_total{result=\"INSERTED\"}[1m]))",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Audit Throughput by Consumer Instance",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 45
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (application, instance) (hikaricp_connections_active)",
+          "legendFormat": "{{application}} / {{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Hikari Active Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 45
+      },
+      "id": 19,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max by (instance) (kafka_consumer_fetch_manager_records_lag_max{application=\"audit-consumer\"})",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka Lag by Consumer Instance",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 45
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "100 * sum by (application, instance) (process_cpu_usage) ",
+          "legendFormat": "{{application}} / {{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Process CPU by Instance",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 53
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(audit_kafka_dlt_total[15m]))",
+          "legendFormat": "DLT",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "DLT Events - Last 15m",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 53
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(audit_kafka_dlt_replayed_total[15m]))",
+          "legendFormat": "replayed",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "DLT Replayed - Last 15m",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "id": 23,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(audit_kafka_dlt_publish_failures_total[15m]))",
+          "legendFormat": "publish failures",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "DLT Publish Failures - Last 15m",
+      "type": "stat"
     }
   ],
   "refresh": "10s",
@@ -1114,7 +1598,8 @@
     "cdc",
     "kafka",
     "debezium",
-    "postgresql"
+    "postgresql",
+    "load-test"
   ],
   "templating": {
     "list": []
@@ -1144,6 +1629,6 @@
   "timezone": "browser",
   "title": "CDC Overview",
   "uid": "cdc-overview",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

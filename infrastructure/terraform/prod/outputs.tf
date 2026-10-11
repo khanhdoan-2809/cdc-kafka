@@ -122,3 +122,35 @@ output "alb_security_group_id" {
   description = "Security group used by the public ALB."
   value       = aws_security_group.alb.id
 }
+
+############ Database Bootstrap Outputs ############
+
+output "transport_db_secret_arn" {
+  description = "Secrets Manager secret for transport-service database credentials."
+  value       = aws_secretsmanager_secret.transport_db_app.arn
+}
+
+output "audit_db_secret_arn" {
+  description = "Secrets Manager secret for audit-consumer database credentials."
+  value       = aws_secretsmanager_secret.audit_db_app.arn
+}
+
+output "debezium_db_secret_arn" {
+  description = "Secrets Manager secret for Debezium database credentials."
+  value       = aws_secretsmanager_secret.debezium_db.arn
+}
+
+output "db_bootstrap_task_definition_arn" {
+  description = "ECS task definition used for one-off database bootstrap."
+  value       = aws_ecs_task_definition.db_bootstrap.arn
+}
+
+output "db_bootstrap_security_group_id" {
+  description = "Security group used by the database bootstrap task."
+  value       = aws_security_group.db_bootstrap.id
+}
+
+output "db_bootstrap_log_group_name" {
+  description = "CloudWatch log group for database bootstrap."
+  value       = aws_cloudwatch_log_group.db_bootstrap.name
+}

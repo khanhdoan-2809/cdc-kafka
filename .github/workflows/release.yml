@@ -23,6 +23,8 @@ env:
   ECS_TASK_FAMILY: cdc-kafka-prod-transport-service
   ECS_CONTAINER_NAME: transport-service
 
+  TRANSPORT_DESIRED_COUNT: 2
+
 jobs:
   release:
     name: Release
@@ -134,3 +136,16 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+
+      - name: Ensure production task count
+        shell: bash
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --desired-count "${TRANSPORT_DESIRED_COUNT}" \
+            >/dev/null
+
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}"

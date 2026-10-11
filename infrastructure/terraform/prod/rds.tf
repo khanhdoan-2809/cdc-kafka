@@ -1,3 +1,38 @@
+############ PostgreSQL Parameter Group ############
+
+resource "aws_db_parameter_group" "postgres" {
+  name   = "${var.project_name}-${var.environment}-postgres17"
+  family = "postgres17"
+
+  parameter {
+    name         = "rds.logical_replication"
+    value        = "1"
+    apply_method = "pending-reboot"
+  }
+
+  parameter {
+    name         = "max_replication_slots"
+    value        = "4"
+    apply_method = "pending-reboot"
+  }
+
+  parameter {
+    name         = "max_wal_senders"
+    value        = "4"
+    apply_method = "pending-reboot"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-postgres17"
+  }
+}
+
+############ Database Subnet Group ############
+
 resource "aws_db_subnet_group" "main" {
   name = "${var.project_name}-${var.environment}"
 
@@ -7,6 +42,8 @@ resource "aws_db_subnet_group" "main" {
     Name = "${var.project_name}-${var.environment}-db-subnet-group"
   }
 }
+
+############ RDS Security Group ############
 
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-${var.environment}-rds"
@@ -18,18 +55,21 @@ resource "aws_security_group" "rds" {
   }
 }
 
+############ PostgreSQL RDS ############
+
 resource "aws_db_instance" "postgres" {
   identifier = "${var.project_name}-${var.environment}-postgres"
 
   engine         = "postgres"
-  engine_version = "17.11"
+  engine_version = var.db_engine_version
 
   instance_class = var.db_instance_class
 
   db_name  = var.db_name
   username = var.db_master_username
 
-  # RDS generates the administrator password and stores/manages it through Secrets Manager
+  # Password is generated and managed by RDS in Secrets Manager.
+  # Terraform never receives the plaintext master password.
   manage_master_user_password = true
 
   port = 5432
@@ -41,12 +81,12 @@ resource "aws_db_instance" "postgres" {
   storage_encrypted = true
 
   db_subnet_group_name = aws_db_subnet_group.main.name
+  parameter_group_name = aws_db_parameter_group.postgres.name
 
   vpc_security_group_ids = [
     aws_security_group.rds.id
   ]
 
-  # RDS is private
   publicly_accessible = false
 
   multi_az = var.db_multi_az
@@ -77,25 +117,26 @@ resource "aws_db_instance" "postgres" {
   }
 }
 
-# Allow ECS to RDS
+############ RDS Access ############
+
 resource "aws_vpc_security_group_ingress_rule" "rds_from_transport" {
   security_group_id = aws_security_group.rds.id
 
   referenced_security_group_id = aws_security_group.transport_ecs.id
 
-  description = "Allow PostgreSQL access from transport-service"
+  description = "Allow PostgreSQL from transport-service"
 
   ip_protocol = "tcp"
   from_port   = 5432
   to_port     = 5432
 }
 
-resource "aws_vpc_security_group_ingress_rule" "rds_from_transport" {
+resource "aws_vpc_security_group_ingress_rule" "rds_from_bootstrap" {
   security_group_id = aws_security_group.rds.id
 
-  referenced_security_group_id = aws_security_group.transport_ecs.id
+  referenced_security_group_id = aws_security_group.db_bootstrap.id
 
-  description = "Allow PostgreSQL access from transport-service"
+  description = "Allow PostgreSQL from database bootstrap task"
 
   ip_protocol = "tcp"
   from_port   = 5432

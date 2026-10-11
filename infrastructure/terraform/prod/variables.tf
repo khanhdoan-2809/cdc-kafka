@@ -32,9 +32,15 @@ variable "vpc_cidr" {
 ############ Database ############
 
 variable "db_name" {
-  description = "Initial PostgreSQL database."
+  description = "Transport PostgreSQL database."
   type        = string
   default     = "transport"
+}
+
+variable "audit_db_name" {
+  description = "Audit PostgreSQL database."
+  type        = string
+  default     = "audit"
 }
 
 variable "db_master_username" {
@@ -43,10 +49,16 @@ variable "db_master_username" {
   default     = "cdc_admin"
 }
 
+variable "db_engine_version" {
+  description = "PostgreSQL engine version."
+  type        = string
+  default     = "17.11"
+}
+
 variable "db_instance_class" {
   description = "RDS instance class."
   type        = string
-  default     = "db.t4g.micro"
+  default     = "db.t4g.small"
 }
 
 variable "db_allocated_storage" {

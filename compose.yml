@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   transport-postgres:
     image: postgres:17
@@ -27,6 +33,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging: *default-logging
 
   audit-postgres:
     image: postgres:17
@@ -44,6 +51,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging: *default-logging
 
   kafka-volume-init:
     image: alpine:3.20
@@ -96,6 +104,10 @@ services:
 
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
 
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+      KAFKA_LOG_SEGMENT_BYTES: 26843545
+
       KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
     healthcheck:
       test:
@@ -112,6 +124,7 @@ services:
         condition: service_started
     volumes:
       - kafka-data:/tmp/kraft-combined-logs
+    logging: *default-logging
 
   kafka-connect:
     image: quay.io/debezium/connect:3.6
@@ -152,6 +165,7 @@ services:
         condition: service_healthy
       transport-postgres:
         condition: service_healthy
+    logging: *default-logging
 
   kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:latest
@@ -168,6 +182,7 @@ services:
     depends_on:
       - kafka
       - kafka-connect
+    logging: *default-logging
 
   debezium-init:
     image: alpine:3.22
@@ -232,9 +247,7 @@ services:
   transport-service:
     build:
       context: ./transport-service
-
     container_name: transport-service
-
     environment:
       DB_HOST: transport-postgres
       DB_PORT: 5432
@@ -244,14 +257,11 @@ services:
 
       TRANSPORT_DB_MAX_POOL_SIZE: ${TRANSPORT_DB_MAX_POOL_SIZE:-10}
       TRANSPORT_DB_MIN_IDLE: ${TRANSPORT_DB_MIN_IDLE:-2}
-
     ports:
       - "8080:8080"
-
     depends_on:
       transport-postgres:
         condition: service_healthy
-
     healthcheck:
       test:
         [
@@ -262,18 +272,15 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
-
     restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
 
   audit-consumer:
     build:
       context: ./audit-consumer
-
-    container_name: audit-consumer
-
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
-
       AUDIT_DB_HOST: audit-postgres
       AUDIT_DB_PORT: 5432
       AUDIT_DB_NAME: ${AUDIT_DB_NAME:-audit}
@@ -291,26 +298,29 @@ services:
       AUDIT_DLT_REPLAY_GROUP_ID: ${AUDIT_DLT_REPLAY_GROUP_ID:-audit-dlt-replay}
 
       SERVER_PORT: 8081
-
-    ports:
-      - "8081:8081"
-
+    expose:
+      - "8081"
     depends_on:
       kafka:
         condition: service_healthy
-
       audit-postgres:
         condition: service_healthy
-
     restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *default-logging
 
   prometheus:
     image: prom/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
     ports:
       - "9090:9090"
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
+    logging: *default-logging
 
   grafana:
     image: grafana/grafana
@@ -325,6 +335,7 @@ services:
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+    logging: *default-logging
 
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
@@ -334,6 +345,7 @@ services:
       DATA_SOURCE_PASS: ${TRANSPORT_DB_PASSWORD:-transport}
     depends_on:
       - transport-postgres
+    logging: *default-logging
 
   audit-postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
@@ -343,6 +355,7 @@ services:
       DATA_SOURCE_PASS: ${AUDIT_DB_PASSWORD:-audit}
     depends_on:
       - audit-postgres
+    logging: *default-logging
 
 volumes:
   transport-postgres-data:

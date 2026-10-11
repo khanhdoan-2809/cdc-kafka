@@ -64,3 +64,9 @@ COMPOSE=(
   --remove-orphans
 
 "${COMPOSE[@]}" ps
+
+echo "Cleaning old Docker images"
+
+docker image prune \
+  -af \
+  --filter "until=168h"

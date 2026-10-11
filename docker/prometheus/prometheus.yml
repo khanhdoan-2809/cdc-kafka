@@ -4,15 +4,20 @@ global:
 scrape_configs:
   - job_name: transport-service
     metrics_path: /actuator/prometheus
+
     static_configs:
       - targets:
           - transport-service:8080
 
   - job_name: audit-consumer
     metrics_path: /actuator/prometheus
-    static_configs:
-      - targets:
-          - audit-consumer:8081
+
+    dns_sd_configs:
+      - names:
+          - audit-consumer
+        type: A
+        port: 8081
+        refresh_interval: 5s
 
   - job_name: transport-postgres
     static_configs:

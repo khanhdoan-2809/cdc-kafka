@@ -97,7 +97,9 @@ public class AuditEventMapper {
             case "c" -> AuditOperation.INSERT;
             case "u" -> isSoftDelete(event) ? AuditOperation.DELETE : AuditOperation.UPDATE;
             case "d" -> AuditOperation.DELETE;
-            default -> throw new IllegalArgumentException("Unsupported Debezium operation: " + event.operation());
+            default -> throw new UnsupportedCdcEventException(
+                    "Unsupported Debezium operation: " + event.operation()
+            );
         };
     }
 
@@ -210,7 +212,7 @@ public class AuditEventMapper {
         try {
             return EntityType.fromTable(table);
         } catch (IllegalArgumentException e) {
-            throw new UnsupportedCdcEventException(e.getMessage());
+            throw new UnsupportedCdcEventException(e.getMessage(), e);
         }
     }
 }

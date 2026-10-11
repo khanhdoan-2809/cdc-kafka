@@ -1,5 +1,6 @@
 package com.example.auditconsumer.infrastructure.kafka;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
@@ -8,6 +9,11 @@ import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
 
 @Configuration
+@ConditionalOnProperty(
+        prefix = "audit.kafka.dlt-replay",
+        name = "enabled",
+        havingValue = "true"
+)
 public class DltReplayKafkaConfiguration {
 
     @Bean

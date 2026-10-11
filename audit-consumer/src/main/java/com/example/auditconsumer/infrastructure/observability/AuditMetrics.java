@@ -24,7 +24,9 @@ public class AuditMetrics {
                 "result", result.name()
         ).increment();
 
-        recordEndToEndLatency(event);
+        if (result == AuditSaveResult.INSERTED) {
+            recordEndToEndLatency(event);
+        }
     }
 
     public void retry(String topic) {
@@ -37,6 +39,20 @@ public class AuditMetrics {
     public void dlt(String topic) {
         meterRegistry.counter(
                 "audit.kafka.dlt",
+                "topic", topic
+        ).increment();
+    }
+
+    public void dltPublishFailed(String topic) {
+        meterRegistry.counter(
+                "audit.kafka.dlt.publish.failures",
+                "topic", topic
+        ).increment();
+    }
+
+    public void dltReplayed(String topic) {
+        meterRegistry.counter(
+                "audit.kafka.dlt.replayed",
                 "topic", topic
         ).increment();
     }
@@ -59,12 +75,5 @@ public class AuditMetrics {
                 .description("Time from source database change until audit persistence")
                 .register(meterRegistry)
                 .record(duration);
-    }
-
-    public void dltReplayed(String topic) {
-        meterRegistry.counter(
-                "audit.kafka.dlt.replayed",
-                "topic", topic
-        ).increment();
     }
 }

@@ -47,6 +47,7 @@ management:
     distribution:
       percentiles-histogram:
         audit.cdc.end.to.end: true
+        spring.kafka.listener: true
     tags:
       application: ${spring.application.name}
 

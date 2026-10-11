@@ -310,10 +310,17 @@ services:
       DATA_SOURCE_URI: transport-postgres:5432/${TRANSPORT_DB_NAME:-transport}?sslmode=disable
       DATA_SOURCE_USER: ${TRANSPORT_DB_USERNAME:-transport}
       DATA_SOURCE_PASS: ${TRANSPORT_DB_PASSWORD:-transport}
-    ports:
-      - "9187:9187"
     depends_on:
       - transport-postgres
+
+  audit-postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: audit-postgres:5432/${AUDIT_DB_NAME:-audit}?sslmode=disable
+      DATA_SOURCE_USER: ${AUDIT_DB_USERNAME:-audit}
+      DATA_SOURCE_PASS: ${AUDIT_DB_PASSWORD:-audit}
+    depends_on:
+      - audit-postgres
 
 volumes:
   transport-postgres-data:

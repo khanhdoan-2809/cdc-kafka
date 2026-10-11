@@ -171,7 +171,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max(kafka_consumer_records_lag_max{application=\"audit-consumer\"})",
+          "expr": "max(kafka_consumer_fetch_manager_records_lag_max{application=\"audit-consumer\"})",
           "legendFormat": "max lag",
           "range": true,
           "refId": "A"

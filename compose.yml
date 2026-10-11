@@ -280,6 +280,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      audit-postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   prometheus:

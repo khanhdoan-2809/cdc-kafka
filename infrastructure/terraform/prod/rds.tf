@@ -142,3 +142,15 @@ resource "aws_vpc_security_group_ingress_rule" "rds_from_bootstrap" {
   from_port   = 5432
   to_port     = 5432
 }
+
+resource "aws_vpc_security_group_ingress_rule" "rds_from_msk_connect" {
+  security_group_id = aws_security_group.rds.id
+
+  referenced_security_group_id = aws_security_group.msk_client.id
+
+  description = "Allow PostgreSQL from MSK Connect"
+
+  ip_protocol = "tcp"
+  from_port   = 5432
+  to_port     = 5432
+}

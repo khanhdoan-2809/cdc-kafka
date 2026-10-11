@@ -2,6 +2,8 @@ data "aws_ssm_parameter" "amazon_linux_2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
+data "aws_partition" "current" {}
+
 resource "aws_vpc" "main" {
   cidr_block = var.vpc_cidr
 
@@ -99,71 +101,13 @@ resource "aws_iam_role" "dev" {
 resource "aws_iam_role_policy_attachment" "ssm" {
   role = aws_iam_role.dev.name
 
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "dev" {
   name = "${var.project_name}-${var.environment}-ec2"
-
   role = aws_iam_role.dev.name
 }
-
-resource "aws_instance" "dev" {
-  ami           = data.aws_ssm_parameter.amazon_linux_2023.value
-  instance_type = var.dev_instance_type
-
-  subnet_id = aws_subnet.public.id
-
-  vpc_security_group_ids = [
-    aws_security_group.dev.id
-  ]
-
-  iam_instance_profile = aws_iam_instance_profile.dev.name
-
-  associate_public_ip_address = true
-
-  root_block_device {
-    volume_type = "gp3"
-    volume_size = var.dev_root_volume_size
-
-    encrypted = true
-
-    delete_on_termination = true
-  }
-
-  metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    set -eux
-
-    dnf install -y docker
-
-    systemctl enable --now docker
-    systemctl enable --now amazon-ssm-agent
-
-    usermod -aG docker ec2-user
-
-    mkdir -p /opt/cdc-kafka
-    chown ec2-user:ec2-user /opt/cdc-kafka
-  EOF
-
-  lifecycle {
-    ignore_changes = [
-      ami
-    ]
-  }
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}"
-  }
-}
-
-# EC2 pull from ECR
-data "aws_partition" "current" {}
 
 data "aws_iam_policy_document" "dev_ecr_pull" {
   statement {
@@ -197,71 +141,67 @@ data "aws_iam_policy_document" "dev_ecr_pull" {
 }
 
 resource "aws_iam_role_policy" "dev_ecr_pull" {
-  name = "ecr-pull"
-  role = aws_iam_role.dev.id
-
+  name   = "ecr-pull"
+  role   = aws_iam_role.dev.id
   policy = data.aws_iam_policy_document.dev_ecr_pull.json
 }
 
-# User Data
-user_data = <<-EOF
-  #!/bin/bash
-  set -eux
+resource "aws_instance" "dev" {
+  ami           = data.aws_ssm_parameter.amazon_linux_2023.value
+  instance_type = var.dev_instance_type
 
-  dnf install -y docker git curl openssl
+  subnet_id = aws_subnet.public.id
 
-  systemctl enable --now docker
-  systemctl enable --now amazon-ssm-agent
+  vpc_security_group_ids = [
+    aws_security_group.dev.id
+  ]
 
-  usermod -aG docker ec2-user
+  iam_instance_profile = aws_iam_instance_profile.dev.name
 
-  mkdir -p /usr/local/lib/docker/cli-plugins
+  associate_public_ip_address = true
 
-  curl -fsSL \
-    https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
-    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = var.dev_root_volume_size
 
-  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+    encrypted             = true
+    delete_on_termination = true
+  }
 
-  mkdir -p /opt/cdc-kafka
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
 
-  chown -R ec2-user:ec2-user /opt/cdc-kafka
-EOF
+  user_data = <<-EOF
+    #!/bin/bash
+    set -eux
 
-data "aws_partition" "current" {}
+    dnf install -y docker git curl openssl
 
-data "aws_iam_policy_document" "dev_ecr_pull" {
-  statement {
-    effect = "Allow"
+    systemctl enable --now docker
+    systemctl enable --now amazon-ssm-agent
 
-    actions = [
-      "ecr:GetAuthorizationToken"
-    ]
+    usermod -aG docker ec2-user
 
-    resources = [
-      "*"
+    mkdir -p /usr/local/lib/docker/cli-plugins
+
+    curl -fsSL \
+      https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
+      -o /usr/local/lib/docker/cli-plugins/docker-compose
+
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+    mkdir -p /opt
+  EOF
+
+  lifecycle {
+    ignore_changes = [
+      ami
     ]
   }
 
-  statement {
-    effect = "Allow"
-
-    actions = [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:BatchGetImage",
-      "ecr:GetDownloadUrlForLayer"
-    ]
-
-    resources = [
-      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-transport-service",
-      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-audit-consumer"
-    ]
+  tags = {
+    Name = "${var.project_name}-${var.environment}"
   }
-}
-
-resource "aws_iam_role_policy" "dev_ecr_pull" {
-  name = "ecr-pull"
-  role = aws_iam_role.dev.id
-
-  policy = data.aws_iam_policy_document.dev_ecr_pull.json
 }

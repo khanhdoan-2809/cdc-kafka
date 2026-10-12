@@ -30,7 +30,7 @@ variable "vpc_cidr" {
 variable "dev_instance_type" {
   description = "EC2 instance type used by the development Docker stack."
   type        = string
-  default     = "t4g.nano"
+  default     = "t3a.medium"
 }
 
 variable "dev_root_volume_size" {

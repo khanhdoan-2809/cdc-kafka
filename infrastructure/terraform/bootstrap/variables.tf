@@ -13,7 +13,7 @@ variable "aws_region" {
 variable "environment" {
   description = "Production environment name."
   type        = string
-  default     = "prod"
+  default     = "dev"
 }
 
 ############ Github OIDC ############
@@ -32,6 +32,6 @@ variable "github_repository" {
 variable "github_environment" {
   description = "GitHub environment allowed to deploy production infrastructure."
   type        = string
-  default     = "production"
+  default     = "dev"
 }
 

@@ -436,15 +436,6 @@ resource "aws_iam_role_policy" "github_deploy" {
   policy = data.aws_iam_policy_document.github_deploy.json
 }
 
-# DEV
-locals {
-  github_main_subject = "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/main"
-  github_dev_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/dev",
-    "repo:${var.github_owner}@*/${var.github_repository}@*:ref:refs/heads/dev"
-  ]
-}
-
 ############ DEV Application Deployment Role ############
 
 data "aws_iam_policy_document" "github_dev_deploy_assume_role" {
@@ -480,14 +471,6 @@ data "aws_iam_policy_document" "github_dev_deploy_assume_role" {
     }
   }
 }
-
-resource "aws_iam_role" "github_dev_deploy" {
-  name = "${var.project_name}-github-dev-deploy"
-
-  assume_role_policy = data.aws_iam_policy_document.github_dev_deploy_assume_role.json
-}
-
-###########
 
 resource "aws_iam_role" "github_dev_deploy" {
   name = "${var.project_name}-github-dev-deploy"

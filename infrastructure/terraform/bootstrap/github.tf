@@ -612,14 +612,15 @@ data "aws_iam_policy_document" "github_dev_apply_assume_role" {
       "sts:AssumeRoleWithWebIdentity"
     ]
 
-    principals {
-      type = "Federated"
+    principals { # who is trusted to perform the action
+      type = "Federated" # the trusted identity is an external identity provider (Github's OIDC)
 
       identifiers = [
         aws_iam_openid_connect_provider.github.arn
       ]
     }
 
+    # The token's audience must equal sts.amazonaws.com.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:aud"

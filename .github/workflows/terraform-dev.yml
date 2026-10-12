@@ -59,6 +59,7 @@ jobs:
     name: Plan
     runs-on: ubuntu-latest
 
+    # whether a pull request comes from the same repository
     if: >
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -86,6 +87,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
 
+      # -reconfigure = forget old backend settings. Use the settings is given now
       - name: Terraform init
         run: |
           terraform init \
@@ -106,6 +108,7 @@ jobs:
     name: Apply
     runs-on: ubuntu-latest
 
+    # manually start on the dev branch
     if: >
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')

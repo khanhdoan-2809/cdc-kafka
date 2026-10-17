@@ -23,7 +23,7 @@ resource "aws_vpc_security_group_ingress_rule" "developer" {
 
   security_group_id = aws_security_group.dev.id
 
-  cidr_ipv4    = var.developer_cidr
+  cidr_ipv4   = var.developer_cidr
   ip_protocol = "tcp"
   from_port   = each.value.port
   to_port     = each.value.port

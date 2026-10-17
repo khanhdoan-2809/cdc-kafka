@@ -2,51 +2,81 @@ name: Deploy DEV
 
 on:
   push:
-    branches:
-      - dev
-
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: cdc-kafka-dev-deployment
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
-  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
-
-concurrency:
-  group: dev-deployment
-  cancel-in-progress: false
+  ECR_REGISTRY: ${{ vars.DEV_AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+  TF_VAR_aws_account_id: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+  TF_VAR_developer_cidr: ${{ vars.DEV_DEVELOPER_CIDR }}
 
 jobs:
   verify:
-    name: Verify
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      - name: Setup Java
-        uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      - name: Make Maven wrapper executable
-        run: chmod +x mvnw
+      - run: chmod +x mvnw && ./mvnw -B clean verify
 
-      - name: Maven verify
-        run: ./mvnw -B clean verify
+  infrastructure:
+    needs: verify
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/dev
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14.0"
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.DEV_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+
+      - name: Terraform init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ vars.DEV_TF_STATE_BUCKET }}" \
+            -backend-config="key=dev/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - run: terraform validate
+      - run: terraform plan -lock-timeout=5m -out=tfplan
+      - run: terraform apply -auto-approve tfplan
 
   build:
-    name: Build ${{ matrix.service }}
-
-    needs:
-      - verify
-
+    needs: infrastructure
     runs-on: ubuntu-latest
 
     permissions:
@@ -56,161 +86,161 @@ jobs:
     strategy:
       matrix:
         include:
-          - service: transport-service
-            repository: cdc-kafka-transport-service
+          - repository: cdc-kafka-transport-service
             context: ./transport-service
-
-          - service: audit-consumer
-            repository: cdc-kafka-audit-consumer
+          - repository: cdc-kafka-audit-consumer
             context: ./audit-consumer
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cdc-kafka-github-dev-deploy
+          role-to-assume: ${{ vars.DEV_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
 
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Check image
+      - name: Check whether the SHA image already exists
         id: image
-        shell: bash
+        env:
+          REPOSITORY: ${{ matrix.repository }}
         run: |
           if aws ecr describe-images \
-            --repository-name "${{ matrix.repository }}" \
-            --image-ids "imageTag=${GITHUB_SHA}" \
+            --repository-name "$REPOSITORY" \
+            --image-ids "imageTag=$GITHUB_SHA" \
             >/dev/null 2>&1; then
-
             echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build image
+      - name: Build and push image
         if: steps.image.outputs.exists != 'true'
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+          CONTEXT: ${{ matrix.context }}
         run: |
-          docker build \
-            -t "${ECR_REGISTRY}/${{ matrix.repository }}:${GITHUB_SHA}" \
-            "${{ matrix.context }}"
-
-      - name: Push image
-        if: steps.image.outputs.exists != 'true'
-        run: |
-          docker push \
-            "${ECR_REGISTRY}/${{ matrix.repository }}:${GITHUB_SHA}"
+          IMAGE="$ECR_REGISTRY/$REPOSITORY:$GITHUB_SHA"
+          docker build -t "$IMAGE" "$CONTEXT"
+          docker push "$IMAGE"
 
   deploy:
-    name: Deploy DEV
-
-    needs:
-      - build
-
+    needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     permissions:
       contents: read
       id-token: write
 
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cdc-kafka-github-dev-deploy
+          role-to-assume: ${{ vars.DEV_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
 
-      - name: Find DEV EC2
+      - name: Find running DEV EC2
         id: instance
-        shell: bash
         run: |
-          for _ in {1..60}; do
-            INSTANCE_ID="$(
-              aws ec2 describe-instances \
-                --filters \
-                  "Name=tag:Project,Values=cdc-kafka" \
-                  "Name=tag:Environment,Values=dev" \
-                  "Name=instance-state-name,Values=running" \
-                --query "Reservations[].Instances[].InstanceId | [0]" \
-                --output text
-            )"
+          INSTANCE_ID="$(aws ec2 describe-instances \
+            --filters \
+              "Name=tag:Project,Values=cdc-kafka" \
+              "Name=tag:Environment,Values=dev" \
+              "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].InstanceId | [0]" \
+            --output text)"
 
-            if [[ -n "${INSTANCE_ID}" && "${INSTANCE_ID}" != "None" ]]; then
-              echo "instance_id=${INSTANCE_ID}" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "None" ]]; then
+            echo "Running DEV EC2 instance not found" >&2
+            exit 1
+          fi
 
-            sleep 5
-          done
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
-          echo "DEV EC2 instance not found"
-          exit 1
-
-      - name: Deploy through SSM
+      - name: Wait for SSM agent
         env:
           INSTANCE_ID: ${{ steps.instance.outputs.instance_id }}
-        shell: bash
         run: |
-          REMOTE_COMMAND=$(cat <<EOF
-          set -euo pipefail
+          for attempt in {1..60}; do
+            STATUS="$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text)"
 
-          if [[ ! -d /opt/cdc-kafka/.git ]]; then
+            if [[ "$STATUS" == "Online" ]]; then exit 0; fi
+            sleep 10
+          done
+
+          echo "SSM agent did not become online" >&2
+          exit 1
+
+      - name: Deploy and smoke test via SSM
+        env:
+          INSTANCE_ID: ${{ steps.instance.outputs.instance_id }}
+        run: |
+          REMOTE_COMMAND=$(cat <<EOF_REMOTE
+          set -eu
+
+          if [ ! -d /opt/cdc-kafka/.git ]; then
             rm -rf /opt/cdc-kafka
-
-            git clone \
-              --branch dev \
-              --single-branch \
-              https://github.com/${GITHUB_REPOSITORY}.git \
+            git clone --branch dev --single-branch \
+              "https://github.com/${GITHUB_REPOSITORY}.git" \
               /opt/cdc-kafka
           fi
 
           cd /opt/cdc-kafka
-
           git fetch origin dev
           git reset --hard ${GITHUB_SHA}
 
-          chmod +x scripts/deploy-dev.sh
+          bash scripts/deploy-dev.sh \
+            '${AWS_REGION}' '${ECR_REGISTRY}' '${GITHUB_SHA}'
 
-          ./scripts/deploy-dev.sh \
-            ${AWS_REGION} \
-            ${ECR_REGISTRY} \
-            ${GITHUB_SHA}
-          EOF
+          bash scripts/smoke-test-dev.sh '${GITHUB_SHA}'
+          EOF_REMOTE
           )
 
-          PARAMETERS="$(
-            jq -n \
-              --arg command "${REMOTE_COMMAND}" \
-              '{commands: [$command]}'
-          )"
+          PARAMETERS="$(jq -nc \
+            --arg command "$REMOTE_COMMAND" \
+            '{commands:[$command],executionTimeout:["2100"]}')"
 
-          COMMAND_ID="$(
-            aws ssm send-command \
-              --instance-ids "${INSTANCE_ID}" \
-              --document-name "AWS-RunShellScript" \
-              --parameters "${PARAMETERS}" \
-              --query "Command.CommandId" \
-              --output text
-          )"
+          COMMAND_ID="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "$PARAMETERS" \
+            --query 'Command.CommandId' \
+            --output text)"
 
-          if ! aws ssm wait command-executed \
-            --command-id "${COMMAND_ID}" \
-            --instance-id "${INSTANCE_ID}"; then
+          for attempt in {1..180}; do
+            STATUS="$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query Status \
+              --output text 2>/dev/null || true)"
 
-            aws ssm get-command-invocation \
-              --command-id "${COMMAND_ID}" \
-              --instance-id "${INSTANCE_ID}"
+            case "$STATUS" in
+              Success)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query StandardOutputContent \
+                  --output text
+                exit 0
+                ;;
+              Failed|Cancelled|Cancelling|TimedOut)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$INSTANCE_ID" || true
+                exit 1
+                ;;
+              *)
+                sleep 10
+                ;;
+            esac
+          done
 
-            exit 1
-          fi
-
+          echo "SSM command timed out: $COMMAND_ID" >&2
           aws ssm get-command-invocation \
-            --command-id "${COMMAND_ID}" \
-            --instance-id "${INSTANCE_ID}" \
-            --query "StandardOutputContent" \
-            --output text
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" || true
+          exit 1

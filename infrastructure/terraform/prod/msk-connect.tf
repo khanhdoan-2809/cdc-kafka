@@ -205,6 +205,8 @@ resource "aws_iam_role_policy" "msk_connect" {
 ############ Debezium Connector ############
 
 resource "aws_mskconnect_connector" "transport_cdc" {
+  count = var.enable_msk_connect ? 1 : 0
+
   name = "${var.project_name}-${var.environment}-transport-cdc"
 
   kafkaconnect_version = "3.7.x"

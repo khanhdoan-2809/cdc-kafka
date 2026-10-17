@@ -10,14 +10,11 @@ resource "aws_security_group" "alb" {
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
   security_group_id = aws_security_group.alb.id
-
-  description = "Allow public HTTP"
-
-  ip_protocol = "tcp"
-  from_port   = 80
-  to_port     = 80
-
-  cidr_ipv4 = "0.0.0.0/0"
+  description       = "Temporary trusted access to Transport API"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = var.prod_allowed_cidr
 }
 
 resource "aws_security_group" "transport_ecs" {

@@ -119,6 +119,8 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+############ NAT Gateway ############
+
 resource "aws_eip" "nat" {
   domain = "vpc"
 
@@ -138,15 +140,6 @@ resource "aws_nat_gateway" "main" {
 
   tags = {
     Name = "${var.project_name}-${var.environment}-nat"
-  }
-}
-
-############ NAT Gateway ############
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-nat-eip"
   }
 }
 

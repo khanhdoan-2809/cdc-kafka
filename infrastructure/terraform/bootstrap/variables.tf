@@ -1,37 +1,47 @@
 variable "project_name" {
-  description = "Project name used for AWS resource naming."
+  description = "Project name for AWS resource names."
   type        = string
   default     = "cdc-kafka"
 }
 
 variable "aws_region" {
-  description = "AWS region."
+  description = "AWS Region used by this environment."
   type        = string
   default     = "ap-southeast-1"
 }
 
-variable "environment" {
-  description = "Production environment name."
+variable "aws_account_id" {
+  description = "Expected AWS account ID."
   type        = string
-  default     = "dev"
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be a 12-digit AWS account ID."
+  }
 }
 
-############ Github OIDC ############
-variable "github_owner" {
-  description = "GitHub repository owner."
+variable "environment" {
+  description = "Target environment: dev or prod."
   type        = string
-  default     = "khanhdoan-2809"
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be either dev or prod."
+  }
+}
+
+variable "github_owner" {
+  type    = string
+  default = "khanhdoan-2809"
 }
 
 variable "github_repository" {
-  description = "GitHub repository name."
-  type        = string
-  default     = "cdc-kafka"
+  type    = string
+  default = "cdc-kafka"
 }
 
 variable "github_environment" {
-  description = "GitHub environment allowed to deploy production infrastructure."
+  description = "Protected GitHub environment for production."
   type        = string
-  default     = "dev"
+  default     = "production"
 }
-

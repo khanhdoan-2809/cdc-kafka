@@ -1,33 +1,44 @@
+
 output "dev_instance_id" {
-  description = "Development EC2 instance ID."
+  description = "DEV EC2 instance ID."
   value       = aws_instance.dev.id
 }
 
 output "dev_public_ip" {
-  description = "Development EC2 public IPv4 address."
+  description = "DEV EC2 public IP."
   value       = aws_instance.dev.public_ip
 }
 
 output "dev_public_dns" {
-  description = "Development EC2 public DNS."
+  description = "DEV EC2 public DNS."
   value       = aws_instance.dev.public_dns
 }
 
 output "dev_security_group_id" {
-  description = "Development EC2 security group."
+  description = "DEV EC2 security group."
   value       = aws_security_group.dev.id
 }
 
 output "dev_ssm_command" {
-  description = "Command used to open an administrative SSM session."
+  description = "Connect to DEV EC2 using SSM."
   value       = "aws ssm start-session --target ${aws_instance.dev.id} --region ${var.aws_region}"
 }
 
+output "dev_transport_db_tunnel" {
+  description = "Forward transport PostgreSQL to localhost:5432."
+  value       = "aws ssm start-session --target ${aws_instance.dev.id} --region ${var.aws_region} --document-name AWS-StartPortForwardingSession --parameters 'portNumber=5432,localPortNumber=5432'"
+}
+
+output "dev_audit_db_tunnel" {
+  description = "Forward audit PostgreSQL to localhost:5433."
+  value       = "aws ssm start-session --target ${aws_instance.dev.id} --region ${var.aws_region} --document-name AWS-StartPortForwardingSession --parameters 'portNumber=5433,localPortNumber=5433'"
+}
+
 output "dev_transport_database" {
-  description = "Transport PostgreSQL connection information."
+  description = "Transport database connection via SSM tunnel."
 
   value = {
-    host     = aws_instance.dev.public_dns
+    host     = "127.0.0.1"
     port     = 5432
     database = "transport"
     username = "transport"
@@ -35,10 +46,10 @@ output "dev_transport_database" {
 }
 
 output "dev_audit_database" {
-  description = "Audit PostgreSQL connection information."
+  description = "Audit database connection via SSM tunnel."
 
   value = {
-    host     = aws_instance.dev.public_dns
+    host     = "127.0.0.1"
     port     = 5433
     database = "audit"
     username = "audit"
@@ -46,21 +57,16 @@ output "dev_audit_database" {
 }
 
 output "dev_transport_url" {
-  description = "DEV transport-service URL."
+  description = "Transport API URL."
   value       = "http://${aws_instance.dev.public_dns}:8080"
 }
 
 output "dev_kafka_ui_url" {
-  description = "DEV Kafka UI URL."
+  description = "Kafka UI URL."
   value       = "http://${aws_instance.dev.public_dns}:8088"
 }
 
 output "dev_grafana_url" {
-  description = "DEV Grafana URL."
+  description = "Grafana URL."
   value       = "http://${aws_instance.dev.public_dns}:3000"
-}
-
-output "dev_kafka_bootstrap_server" {
-  description = "DEV Kafka external bootstrap server. Available after Phase 23.11."
-  value       = "${aws_instance.dev.public_dns}:9092"
 }

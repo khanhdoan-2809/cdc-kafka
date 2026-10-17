@@ -10,18 +10,15 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 locals {
   github_pull_request_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:pull_request",
-    "repo:${var.github_owner}@*/${var.github_repository}@*:pull_request"
+    "repo:${var.github_owner}/${var.github_repository}:pull_request"
   ]
 
   github_dev_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/dev",
-    "repo:${var.github_owner}@*/${var.github_repository}@*:ref:refs/heads/dev"
+    "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/dev"
   ]
 
   github_production_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_environment}",
-    "repo:${var.github_owner}@*/${var.github_repository}@*:environment:${var.github_environment}"
+    "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_environment}"
   ]
 }
 
@@ -85,7 +82,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      aws_s3_bucket.terraform_state.arn
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
     ]
   }
 
@@ -162,17 +159,18 @@ data "aws_iam_policy_document" "github_apply_assume_role" {
 }
 
 resource "aws_iam_role" "github_terraform_apply" {
-  name = "${var.project_name}-github-terraform-apply"
+  count = local.is_prod ? 1 : 0
 
-  assume_role_policy = data.aws_iam_policy_document.github_apply_assume_role.json
-
+  name                 = "${var.project_name}-github-terraform-apply"
+  assume_role_policy   = data.aws_iam_policy_document.github_apply_assume_role.json
   max_session_duration = 3600
 }
 
 ############ PowerUserAccess ############
 resource "aws_iam_role_policy_attachment" "github_apply_power_user" {
-  role = aws_iam_role.github_terraform_apply.name
+  count = local.is_prod ? 1 : 0
 
+  role       = aws_iam_role.github_terraform_apply[0].name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/PowerUserAccess"
 }
 
@@ -254,10 +252,10 @@ data "aws_iam_policy_document" "github_apply_iam" {
 }
 
 resource "aws_iam_role_policy" "github_apply_iam" {
-  name = "project-iam"
+  count = local.is_prod ? 1 : 0
 
-  role = aws_iam_role.github_terraform_apply.id
-
+  name   = "project-iam"
+  role   = aws_iam_role.github_terraform_apply[0].id
   policy = data.aws_iam_policy_document.github_apply_iam.json
 }
 
@@ -285,7 +283,7 @@ data "aws_iam_policy_document" "github_apply_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate"
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
     ]
   }
 
@@ -305,10 +303,10 @@ data "aws_iam_policy_document" "github_apply_state" {
 }
 
 resource "aws_iam_role_policy" "github_apply_state" {
-  name = "terraform-state"
+  count = local.is_prod ? 1 : 0
 
-  role = aws_iam_role.github_terraform_apply.id
-
+  name   = "terraform-state"
+  role   = aws_iam_role.github_terraform_apply[0].id
   policy = data.aws_iam_policy_document.github_apply_state.json
 }
 
@@ -349,8 +347,9 @@ data "aws_iam_policy_document" "github_deploy_assume_role" {
 }
 
 resource "aws_iam_role" "github_deploy" {
-  name = "${var.project_name}-github-deploy"
+  count = local.is_prod ? 1 : 0
 
+  name               = "${var.project_name}-github-deploy"
   assume_role_policy = data.aws_iam_policy_document.github_deploy_assume_role.json
 }
 
@@ -430,9 +429,10 @@ data "aws_iam_policy_document" "github_deploy" {
 }
 
 resource "aws_iam_role_policy" "github_deploy" {
-  name = "application-deployment"
-  role = aws_iam_role.github_deploy.id
+  count = local.is_prod ? 1 : 0
 
+  name   = "application-deployment"
+  role   = aws_iam_role.github_deploy[0].id
   policy = data.aws_iam_policy_document.github_deploy.json
 }
 
@@ -473,8 +473,9 @@ data "aws_iam_policy_document" "github_dev_deploy_assume_role" {
 }
 
 resource "aws_iam_role" "github_dev_deploy" {
-  name = "${var.project_name}-github-dev-deploy"
+  count = local.is_dev ? 1 : 0
 
+  name               = "${var.project_name}-github-dev-deploy"
   assume_role_policy = data.aws_iam_policy_document.github_dev_deploy_assume_role.json
 }
 
@@ -579,9 +580,10 @@ data "aws_iam_policy_document" "github_dev_deploy" {
 }
 
 resource "aws_iam_role_policy" "github_dev_deploy" {
-  name = "dev-deployment"
-  role = aws_iam_role.github_dev_deploy.id
+  count = local.is_dev ? 1 : 0
 
+  name   = "dev-deployment"
+  role   = aws_iam_role.github_dev_deploy[0].id
   policy = data.aws_iam_policy_document.github_dev_deploy.json
 }
 
@@ -623,14 +625,17 @@ data "aws_iam_policy_document" "github_dev_apply_assume_role" {
 }
 
 resource "aws_iam_role" "github_terraform_dev_apply" {
-  name = "${var.project_name}-github-terraform-dev-apply"
+  count = local.is_dev ? 1 : 0
 
-  assume_role_policy  = data.aws_iam_policy_document.github_dev_apply_assume_role.json
+  name                 = "${var.project_name}-github-terraform-dev-apply"
+  assume_role_policy   = data.aws_iam_policy_document.github_dev_apply_assume_role.json
   max_session_duration = 3600
 }
 
 resource "aws_iam_role_policy_attachment" "github_dev_apply_power_user" {
-  role       = aws_iam_role.github_terraform_dev_apply.name
+  count = local.is_dev ? 1 : 0
+
+  role       = aws_iam_role.github_terraform_dev_apply[0].name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/PowerUserAccess"
 }
 
@@ -704,8 +709,10 @@ data "aws_iam_policy_document" "github_dev_apply_iam" {
 }
 
 resource "aws_iam_role_policy" "github_dev_apply_iam" {
+  count = local.is_dev ? 1 : 0
+
   name   = "dev-iam"
-  role   = aws_iam_role.github_terraform_dev_apply.id
+  role   = aws_iam_role.github_terraform_dev_apply[0].id
   policy = data.aws_iam_policy_document.github_dev_apply_iam.json
 }
 
@@ -732,7 +739,7 @@ data "aws_iam_policy_document" "github_dev_apply_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate"
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
     ]
   }
 
@@ -752,7 +759,15 @@ data "aws_iam_policy_document" "github_dev_apply_state" {
 }
 
 resource "aws_iam_role_policy" "github_dev_apply_state" {
+  count = local.is_dev ? 1 : 0
+
   name   = "terraform-state"
-  role   = aws_iam_role.github_terraform_dev_apply.id
+  role   = aws_iam_role.github_terraform_dev_apply[0].id
   policy = data.aws_iam_policy_document.github_dev_apply_state.json
+}
+
+locals {
+  is_dev    = var.environment == "dev"
+  is_prod   = var.environment == "prod"
+  state_key = "${var.environment}/terraform.tfstate"
 }

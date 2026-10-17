@@ -21,6 +21,10 @@ permissions:
   contents: read
 
 env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ vars.DEV_AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
 
@@ -83,9 +87,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          role-to-assume: ${{ vars.DEV_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
 
       # -reconfigure = forget old backend settings. Use the settings is given now
       - name: Terraform init

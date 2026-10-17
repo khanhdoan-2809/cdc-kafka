@@ -37,8 +37,11 @@ build/
 
 ### Terraform ###
 **/.terraform/*
+**/.terraform.lock.info
 *.tfstate
 *.tfstate.*
+*.tfstate.backup
+*.tfstate.backup.*
 *.tfplan
 
 **/terraform.tfvars

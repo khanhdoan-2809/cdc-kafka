@@ -486,7 +486,10 @@ data "aws_iam_policy_document" "github_dev_deploy" {
     effect = "Allow"
 
     actions = [
-      "ecr:GetAuthorizationToken"
+      "ssm:GetCommandInvocation",
+      "ssm:ListCommandInvocations",
+      "ssm:ListCommands",
+      "ssm:DescribeInstanceInformation"
     ]
 
     resources = [

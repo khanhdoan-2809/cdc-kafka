@@ -143,15 +143,6 @@ resource "aws_nat_gateway" "main" {
   }
 }
 
-############ NAT Gateway ############
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-nat-eip"
-  }
-}
-
 ############ Application Private Route Table ############
 # ECS -> private app subnet -> NAT -> internet
 # internet can't initiate directly connection to ECS

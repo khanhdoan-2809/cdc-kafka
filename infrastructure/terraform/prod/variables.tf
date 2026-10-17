@@ -103,3 +103,14 @@ variable "transport_desired_count" {
   type        = number
   default     = 0
 }
+
+variable "enable_msk_connect" {
+  description = "Start Debezium only after database bootstrap and migrations."
+  type        = bool
+  default     = false
+}
+
+variable "prod_allowed_cidr" {
+  description = "Trusted CIDR allowed to reach the temporary production HTTP endpoint."
+  type        = string
+}

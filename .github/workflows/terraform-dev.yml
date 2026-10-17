@@ -3,9 +3,13 @@ name: Terraform DEV PR
 on:
   pull_request:
     branches: [dev]
-    paths:
+    paths: &terraform_paths
       - "infrastructure/terraform/dev/**"
       - ".github/workflows/terraform-dev.yml"
+
+  push:
+    branches: [dev]
+    paths: *terraform_paths
 
   workflow_dispatch:
 
@@ -69,3 +73,47 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - run: terraform plan -lock-timeout=5m -no-color
+
+  infrastructure:
+    needs: validate
+    if: |
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        github.ref == 'refs/heads/dev'
+      )
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/dev
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14.0"
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.DEV_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.DEV_AWS_ACCOUNT_ID }}
+
+      - name: Terraform init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ vars.DEV_TF_STATE_BUCKET }}" \
+            -backend-config="key=dev/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - run: terraform validate
+      - run: terraform plan -lock-timeout=5m -out=tfplan
+      - run: terraform apply -auto-approve tfplan

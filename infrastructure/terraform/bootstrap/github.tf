@@ -482,6 +482,17 @@ resource "aws_iam_role" "github_dev_deploy" {
 ############ Github push the Docker Images ############
 data "aws_iam_policy_document" "github_dev_deploy" {
   statement {
+    sid    = "DescribeSSMInstances"
+    effect = "Allow"
+
+    actions = [
+      "ssm:DescribeInstanceInformation"
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
     sid    = "EcrAuthorization"
     effect = "Allow"
 

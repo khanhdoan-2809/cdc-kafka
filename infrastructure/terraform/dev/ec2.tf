@@ -99,6 +99,7 @@ resource "aws_instance" "dev" {
 
   iam_instance_profile = aws_iam_instance_profile.dev.name
 
+  # automatically assign a public IPv4 address to an EC2 instance when it launches,
   associate_public_ip_address = true
 
   root_block_device {
@@ -110,8 +111,8 @@ resource "aws_instance" "dev" {
   }
 
   metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+    http_endpoint = "enabled" # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
+    http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
   }
 
   user_data = <<-EOF

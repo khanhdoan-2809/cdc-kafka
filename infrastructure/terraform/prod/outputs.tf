@@ -176,3 +176,25 @@ output "msk_client_security_group_id" {
   description = "Security group to attach to applications that connect to MSK."
   value       = aws_security_group.msk_client.id
 }
+
+############ Audit Consumer Outputs ############
+
+output "audit_ecs_service_name" {
+  description = "Audit consumer ECS service name."
+  value       = aws_ecs_service.audit.name
+}
+
+output "audit_task_definition_family" {
+  description = "Audit consumer task definition family."
+  value       = aws_ecs_task_definition.audit.family
+}
+
+output "audit_task_role_arn" {
+  description = "IAM task role used by audit-consumer."
+  value       = aws_iam_role.audit_task.arn
+}
+
+output "audit_log_group_name" {
+  description = "CloudWatch log group for audit-consumer."
+  value       = aws_cloudwatch_log_group.audit.name
+}

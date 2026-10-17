@@ -1,0 +1,148 @@
+
+############ Data Sources ############
+
+data "aws_ssm_parameter" "amazon_linux_2023" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
+data "aws_partition" "current" {}
+
+############ EC2 IAM Role ############
+
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRole"
+    ]
+
+    principals {
+      type = "Service"
+
+      identifiers = [
+        "ec2.amazonaws.com"
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "dev" {
+  name = "${var.project_name}-${var.environment}-ec2"
+
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
+############ SSM Access ############
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role = aws_iam_role.dev.name
+
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+############ ECR Pull Permissions ############
+
+data "aws_iam_policy_document" "dev_ecr_pull" {
+  statement {
+    sid    = "EcrAuthorization"
+    effect = "Allow"
+
+    actions = [
+      "ecr:GetAuthorizationToken"
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "PullApplicationImages"
+    effect = "Allow"
+
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-transport-service",
+      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-audit-consumer"
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "dev_ecr_pull" {
+  name   = "ecr-pull"
+  role   = aws_iam_role.dev.id
+  policy = data.aws_iam_policy_document.dev_ecr_pull.json
+}
+
+############ EC2 Instance Profile ############
+
+resource "aws_iam_instance_profile" "dev" {
+  name = "${var.project_name}-${var.environment}-ec2-instance-profile"
+  role = aws_iam_role.dev.name
+}
+
+############ EC2 Instance ############
+
+resource "aws_instance" "dev" {
+  ami           = data.aws_ssm_parameter.amazon_linux_2023.value
+  instance_type = var.dev_instance_type
+
+  subnet_id = aws_subnet.public.id
+
+  vpc_security_group_ids = [
+    aws_security_group.dev.id
+  ]
+
+  iam_instance_profile = aws_iam_instance_profile.dev.name
+
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = var.dev_root_volume_size
+
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    set -eux
+
+    dnf install -y docker git curl openssl
+
+    systemctl enable --now docker
+    systemctl enable --now amazon-ssm-agent
+
+    usermod -aG docker ec2-user
+
+    mkdir -p /usr/local/lib/docker/cli-plugins
+
+    curl -fsSL \
+      https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
+      -o /usr/local/lib/docker/cli-plugins/docker-compose
+
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+    mkdir -p /opt
+  EOF
+
+  lifecycle {
+    ignore_changes = [
+      ami
+    ]
+  }
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}"
+  }
+}

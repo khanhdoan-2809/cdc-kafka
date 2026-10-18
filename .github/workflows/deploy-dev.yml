@@ -146,6 +146,13 @@ jobs:
         run: |
           REMOTE_COMMAND=$(cat <<EOF_REMOTE
           set -eu
+          
+          # Ensure required tools are installed
+          if ! command -v git >/dev/null 2>&1; then
+          dnf install -y git
+          fi
+          
+          git --version
 
           if [ ! -d /opt/cdc-kafka/.git ]; then
             rm -rf /opt/cdc-kafka

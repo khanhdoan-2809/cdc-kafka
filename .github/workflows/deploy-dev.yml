@@ -167,3 +167,131 @@ jobs:
 
           # Keep your existing SSM send-command
           # and polling logic below.
+
+#      - name: Deploy and smoke test via SSM
+#        env:
+#          INSTANCE_ID: ${{ steps.instance.outputs.instance_id }}
+#        run: |
+#          REMOTE_COMMAND=$(cat <<EOF_REMOTE
+#          set -eu
+#
+#          echo "Waiting for EC2 User Data (cloud-init) to finish..."
+#          # SSM may be online before EC2 bootstrap has installed Docker.
+#          # Bound this wait so an unsuccessful bootstrap fails with diagnostics.
+#          if ! timeout 900 cloud-init status --wait --long; then
+#            echo "EC2 bootstrap did not complete successfully" >&2
+#            tail -n 100 /var/log/cdc-kafka-bootstrap.log 2>/dev/null || true
+#            tail -n 100 /var/log/cloud-init-output.log 2>/dev/null || true
+#            exit 1
+#          fi
+#
+#          if [ ! -f /var/lib/cdc-kafka/bootstrap-ready ]; then
+#            echo "EC2 bootstrap-ready marker is missing" >&2
+#            tail -n 100 /var/log/cdc-kafka-bootstrap.log 2>/dev/null || true
+#            tail -n 100 /var/log/cloud-init-output.log 2>/dev/null || true
+#            exit 1
+#          fi
+#
+#          echo "EC2 bootstrap completed; starting deployment."
+#
+#          # Ensure required tools are installed
+#          if ! command -v git >/dev/null 2>&1; then
+#          dnf install -y git
+#          fi
+#
+#          git --version
+#
+#          if [ ! -d /opt/cdc-kafka/.git ]; then
+#            rm -rf /opt/cdc-kafka
+#            git clone --branch dev --single-branch \
+#              "https://github.com/${GITHUB_REPOSITORY}.git" \
+#              /opt/cdc-kafka
+#          fi
+#
+#          cd /opt/cdc-kafka
+#          git fetch origin dev
+#          git reset --hard ${GITHUB_SHA}
+#
+#          echo "Checking deployment prerequisites..."
+#
+#          git --version
+#          docker --version
+#
+#          # Docker Engine does not automatically include Docker Compose.
+#          # Install Compose on older EC2 instances or after incomplete bootstrap.
+#          if ! docker compose version >/dev/null 2>&1; then
+#            echo "Docker Compose missing; installing v5.6.0..."
+#            mkdir -p /usr/local/lib/docker/cli-plugins
+#            curl -fL --retry 5 \
+#              https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
+#              -o /tmp/docker-compose-v5.6.0-linux-x86_64
+#            install -m 0755 /tmp/docker-compose-v5.6.0-linux-x86_64 \
+#              /usr/local/lib/docker/cli-plugins/docker-compose
+#            rm -f /tmp/docker-compose-v5.6.0-linux-x86_64
+#          fi
+#
+#          docker compose version
+#          aws --version
+#          openssl version
+#
+#          systemctl is-active --quiet docker || {
+#            echo "Docker service is not running"
+#            exit 1
+#          }
+#
+#          bash scripts/deploy-dev.sh \
+#            '${AWS_REGION}' '${ECR_REGISTRY}' '${GITHUB_SHA}'
+#
+#          bash scripts/smoke-test-dev.sh '${GITHUB_SHA}'
+#          EOF_REMOTE
+#          )
+#
+#          PARAMETERS="$(jq -nc \
+#            --arg command "$REMOTE_COMMAND" \
+#            '{commands:[$command],executionTimeout:["2100"]}')"
+#
+#          COMMAND_ID="$(aws ssm send-command \
+#            --instance-ids "$INSTANCE_ID" \
+#            --document-name AWS-RunShellScript \
+#            --parameters "$PARAMETERS" \
+#            --query 'Command.CommandId' \
+#            --output text)"
+#
+#          # SSM can execute for 35 minutes (2100 seconds).
+#          # Poll up to 40 minutes to capture the actual SSM result.
+#          for attempt in {1..240}; do
+#            STATUS="$(aws ssm get-command-invocation \
+#              --command-id "$COMMAND_ID" \
+#              --instance-id "$INSTANCE_ID" \
+#              --query Status \
+#              --output text 2>/dev/null || true)"
+#
+#            case "$STATUS" in
+#              Success)
+#                aws ssm get-command-invocation \
+#                  --command-id "$COMMAND_ID" \
+#                  --instance-id "$INSTANCE_ID" \
+#                  --query StandardOutputContent \
+#                  --output text
+#                exit 0
+#                ;;
+#              Failed|Cancelled|Cancelling|TimedOut)
+#                aws ssm get-command-invocation \
+#                  --command-id "$COMMAND_ID" \
+#                  --instance-id "$INSTANCE_ID" || true
+#                exit 1
+#                ;;
+#              *)
+#                if (( attempt % 6 == 0 )); then
+#                  echo "SSM command $COMMAND_ID still ${STATUS:-pending} ($attempt/240 checks)"
+#                fi
+#                sleep 10
+#                ;;
+#            esac
+#          done
+#
+#          echo "GitHub Actions stopped waiting after 40 minutes: $COMMAND_ID (last status: ${STATUS:-unknown})" >&2
+#          aws ssm get-command-invocation \
+#            --command-id "$COMMAND_ID" \
+#            --instance-id "$INSTANCE_ID" || true
+#          exit 1

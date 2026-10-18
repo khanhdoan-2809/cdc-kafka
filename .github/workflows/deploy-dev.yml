@@ -164,6 +164,19 @@ jobs:
           cd /opt/cdc-kafka
           git fetch origin dev
           git reset --hard ${GITHUB_SHA}
+          
+          echo "Checking deployment prerequisites..."
+  
+          git --version
+          docker --version
+          docker compose version
+          aws --version
+          openssl version
+          
+          systemctl is-active --quiet docker || {
+            echo "Docker service is not running"
+            exit 1
+          }
 
           bash scripts/deploy-dev.sh \
             '${AWS_REGION}' '${ECR_REGISTRY}' '${GITHUB_SHA}'

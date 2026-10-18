@@ -169,6 +169,21 @@ jobs:
   
           git --version
           docker --version
+          
+          # Install Docker Compose if missing
+          if ! docker compose version >/dev/null 2>&1; then
+          echo "Installing Docker Compose..."
+        
+          mkdir -p /usr/local/lib/docker/cli-plugins
+        
+          curl -fL --retry 5 \
+          https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
+          -o /tmp/docker-compose
+        
+          install -m 0755 /tmp/docker-compose \
+          /usr/local/lib/docker/cli-plugins/docker-compose
+          fi
+          
           docker compose version
           aws --version
           openssl version

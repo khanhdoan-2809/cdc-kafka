@@ -111,7 +111,7 @@ resource "aws_instance" "dev" {
   }
 
   metadata_options {
-    http_endpoint = "enabled" # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
+    http_endpoint = "enabled"  # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
     http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
   }
 

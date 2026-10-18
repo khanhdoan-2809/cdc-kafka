@@ -1,6 +1,6 @@
 project_name = "cdc-kafka"
 aws_region   = "ap-southeast-1"
-environment = "dev"
+environment  = "dev"
 
 github_owner       = "khanhdoan-2809"
 github_repository  = "cdc-kafka"

@@ -612,7 +612,7 @@ data "aws_iam_policy_document" "github_dev_apply_assume_role" {
       "sts:AssumeRoleWithWebIdentity"
     ]
 
-    principals { # who is trusted to perform the action
+    principals {         # who is trusted to perform the action
       type = "Federated" # the trusted identity is an external identity provider (Github's OIDC)
 
       identifiers = [

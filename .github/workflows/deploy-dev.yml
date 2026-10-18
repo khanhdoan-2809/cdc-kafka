@@ -92,7 +92,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
 
     permissions:
       contents: read
@@ -146,7 +146,26 @@ jobs:
         run: |
           REMOTE_COMMAND=$(cat <<EOF_REMOTE
           set -eu
-          
+
+          echo "Waiting for EC2 User Data (cloud-init) to finish..."
+          # SSM may be online before EC2 bootstrap has installed Docker.
+          # Bound this wait so an unsuccessful bootstrap fails with diagnostics.
+          if ! timeout 900 cloud-init status --wait --long; then
+            echo "EC2 bootstrap did not complete successfully" >&2
+            tail -n 100 /var/log/cdc-kafka-bootstrap.log 2>/dev/null || true
+            tail -n 100 /var/log/cloud-init-output.log 2>/dev/null || true
+            exit 1
+          fi
+
+          if [ ! -f /var/lib/cdc-kafka/bootstrap-ready ]; then
+            echo "EC2 bootstrap-ready marker is missing" >&2
+            tail -n 100 /var/log/cdc-kafka-bootstrap.log 2>/dev/null || true
+            tail -n 100 /var/log/cloud-init-output.log 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "EC2 bootstrap completed; starting deployment."
+
           # Ensure required tools are installed
           if ! command -v git >/dev/null 2>&1; then
           dnf install -y git

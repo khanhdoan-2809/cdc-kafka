@@ -59,6 +59,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Debug GitHub OIDC subject
+        shell: bash
+        run: |
+          curl -fsS \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | python3 -c '
+          import sys, json, base64
+          token = json.load(sys.stdin)["value"]
+          payload = token.split(".")[1]
+          claims = json.loads(base64.urlsafe_b64decode(
+              payload + "=" * (-len(payload) % 4)
+          ))
+          print("aud:", claims.get("aud"))
+          print("sub:", claims.get("sub"))
+          '
+
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.DEV_DEPLOY_ROLE_ARN }}

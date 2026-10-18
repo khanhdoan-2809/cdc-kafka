@@ -116,6 +116,7 @@ resource "aws_instance" "dev" {
   }
 
   user_data = file("${path.module}/user-data.sh")
+  user_data_replace_on_change = true
 
   lifecycle {
     ignore_changes = [

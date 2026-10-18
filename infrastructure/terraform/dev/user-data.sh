@@ -10,7 +10,6 @@ for attempt in 1 2 3 4 5; do
   if dnf install -y \
     docker \
     git \
-    curl \
     openssl \
     unzip; then
     break

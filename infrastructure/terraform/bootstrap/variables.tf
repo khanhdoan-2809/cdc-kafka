@@ -50,4 +50,3 @@ variable "github_oidc_subject_prefix" {
   description = "Exact GitHub OIDC subject prefix."
   type        = string
 }
-

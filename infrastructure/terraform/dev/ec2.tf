@@ -115,27 +115,7 @@ resource "aws_instance" "dev" {
     http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
   }
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -eux
-
-    dnf install -y docker git curl openssl
-
-    systemctl enable --now docker
-    systemctl enable --now amazon-ssm-agent
-
-    usermod -aG docker ec2-user
-
-    mkdir -p /usr/local/lib/docker/cli-plugins
-
-    curl -fsSL \
-      https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 \
-      -o /usr/local/lib/docker/cli-plugins/docker-compose
-
-    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
-    mkdir -p /opt
-  EOF
+  user_data = file("${path.module}/user-data.sh")
 
   lifecycle {
     ignore_changes = [

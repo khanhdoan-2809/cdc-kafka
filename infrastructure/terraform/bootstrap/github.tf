@@ -10,15 +10,15 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 locals {
   github_pull_request_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:pull_request"
+    "${var.github_oidc_subject_prefix}:pull_request"
   ]
 
   github_dev_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/dev"
+    "${var.github_oidc_subject_prefix}:ref:refs/heads/dev"
   ]
 
   github_production_subjects = [
-    "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_environment}"
+    "${var.github_oidc_subject_prefix}:environment:${var.github_environment}"
   ]
 }
 
@@ -612,7 +612,7 @@ data "aws_iam_policy_document" "github_dev_apply_assume_role" {
       "sts:AssumeRoleWithWebIdentity"
     ]
 
-    principals { # who is trusted to perform the action
+    principals {         # who is trusted to perform the action
       type = "Federated" # the trusted identity is an external identity provider (Github's OIDC)
 
       identifiers = [

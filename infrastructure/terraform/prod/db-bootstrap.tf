@@ -325,3 +325,4 @@ resource "aws_ecs_task_definition" "db_bootstrap" {
   tags = {
     Name = "${var.project_name}-${var.environment}-db-bootstrap"
   }
+}

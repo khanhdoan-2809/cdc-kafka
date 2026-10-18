@@ -115,7 +115,7 @@ resource "aws_instance" "dev" {
     http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
   }
 
-  user_data = file("${path.module}/user-data.sh")
+  user_data                   = file("${path.module}/user-data.sh")
   user_data_replace_on_change = true
 
   lifecycle {

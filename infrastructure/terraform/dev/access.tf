@@ -15,6 +15,11 @@ locals {
       port        = 3000
       description = "Grafana"
     }
+
+    transport_postgres = {
+      port        = 5432
+      description = "Transport PostgreSQL"
+    }
   }
 }
 

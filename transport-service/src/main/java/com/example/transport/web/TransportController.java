@@ -1,10 +1,9 @@
 package com.example.transport.web;
 
+import com.example.transport.application.TransportHierarchyService;
 import com.example.transport.application.TransportService;
 import com.example.transport.domain.transport.Transport;
-import com.example.transport.web.dto.ChangeTransportStatusRequest;
-import com.example.transport.web.dto.CreateTransportRequest;
-import com.example.transport.web.dto.TransportResponse;
+import com.example.transport.web.dto.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,11 +17,42 @@ import java.util.List;
 public class TransportController {
 
     private final TransportService transportService;
+    private final TransportHierarchyService transportHierarchyService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public TransportResponse create(@Valid @RequestBody CreateTransportRequest request) {
         return toResponse(transportService.create(request.reference()));
+    }
+
+    @PostMapping("/with-jobs")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TransportHierarchyResponse createHierarchy(@Valid @RequestBody CreateTransportHierarchyRequest request) {
+        var jobs = request.jobs().stream()
+                .map(job -> new TransportHierarchyService.NewJob(
+                        job.reference(),
+                        job.containers().stream().map(CreateContainerRequest::containerNumber).toList()
+                ))
+                .toList();
+
+        var result = transportHierarchyService.create(request.reference(), jobs);
+
+        return new TransportHierarchyResponse(
+                result.transport().getId(),
+                result.transport().getReference(),
+                result.jobs().stream()
+                        .map(createdJob -> new TransportHierarchyResponse.JobResult(
+                                createdJob.job().getId(),
+                                createdJob.job().getReference(),
+                                createdJob.containers().stream()
+                                        .map(container -> new TransportHierarchyResponse.ContainerResult(
+                                                container.getId(),
+                                                container.getContainerNumber()
+                                        ))
+                                        .toList()
+                        ))
+                        .toList()
+        );
     }
 
     @PatchMapping("/{id}/status")

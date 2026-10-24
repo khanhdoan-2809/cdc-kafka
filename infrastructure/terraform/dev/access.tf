@@ -20,6 +20,11 @@ locals {
       port        = 5432
       description = "Transport PostgreSQL"
     }
+
+    audit_postgres = {
+      port        = 5433
+      description = "Audit PostgreSQL"
+    }
   }
 }
 

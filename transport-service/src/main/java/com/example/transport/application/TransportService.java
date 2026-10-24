@@ -67,7 +67,6 @@ public class TransportService {
     public void delete(Long id) {
         var transport = findById(id);
         transport.delete(Instant.now(clock));
-
         transportRepository.save(transport);
     }
 }

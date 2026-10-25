@@ -170,11 +170,32 @@ data "aws_iam_policy_document" "msk_connect" {
   }
 
   statement {
+    sid    = "ReadDebeziumPlugin"
+    effect = "Allow"
+    actions = ["s3:GetObject"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:s3:::${local.msk_connect_plugin_bucket_name}/${local.msk_connect_plugin_key}"
+    ]
+  }
+
+  statement {
+    sid    = "ListDebeziumPluginBucket"
+    effect = "Allow"
+    actions = ["s3:ListBucket"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:s3:::${local.msk_connect_plugin_bucket_name}"
+    ]
+  }
+
+  statement {
     sid    = "ReadDatabaseSecret"
     effect = "Allow"
 
     actions = [
-      "secretsmanager:GetSecretValue"
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:ListSecretVersionIds"
     ]
 
     resources = [
@@ -245,6 +266,8 @@ resource "aws_mskconnect_connector" "transport_cdc" {
     "topic.prefix" = "transport"
 
     "table.include.list" = "public.transport,public.job,public.container"
+
+    "config.action.reload" = "none"
 
     "snapshot.mode" = "initial"
 

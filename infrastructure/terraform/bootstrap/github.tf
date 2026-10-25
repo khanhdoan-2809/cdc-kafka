@@ -407,6 +407,29 @@ data "aws_iam_policy_document" "github_deploy" {
     ]
   }
 
+  # Only the one-time production DB bootstrap workflow writes these secrets.
+  statement {
+    sid    = "BootstrapProductionDatabaseCredentials"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue"
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/database/transport-app-??????",
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/database/audit-app-??????",
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/database/debezium-??????"
+    ]
+  }
+
+  statement {
+    sid       = "GenerateProductionDatabasePasswords"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetRandomPassword"]
+    resources = ["*"]
+  }
+
   statement {
     sid     = "FindProdHostAndCommands"
     effect  = "Allow"

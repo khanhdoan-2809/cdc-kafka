@@ -69,5 +69,4 @@ public class TransportController {
                 transport.getUpdatedAt()
         );
     }
-
 }

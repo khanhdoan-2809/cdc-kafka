@@ -21,24 +21,27 @@ locals {
 }
 
 data "aws_s3_bucket" "msk_connect_plugins" {
+  count  = var.enable_msk_connect ? 1 : 0
   bucket = local.msk_connect_plugin_bucket_name
 }
 
 data "aws_s3_object" "debezium_plugin" {
+  count  = var.enable_msk_connect ? 1 : 0
   bucket = local.msk_connect_plugin_bucket_name
   key    = local.msk_connect_plugin_key
 }
 
 resource "aws_mskconnect_custom_plugin" "debezium_postgres" {
-  name = "${var.project_name}-${var.environment}-debezium-postgres-${replace(local.debezium_version, ".", "-")}"
+  count = var.enable_msk_connect ? 1 : 0
+  name  = "${var.project_name}-${var.environment}-debezium-postgres-${replace(local.debezium_version, ".", "-")}"
 
   content_type = "ZIP"
 
   location {
     s3 {
-      bucket_arn     = data.aws_s3_bucket.msk_connect_plugins.arn
+      bucket_arn     = data.aws_s3_bucket.msk_connect_plugins[0].arn
       file_key       = local.msk_connect_plugin_key
-      object_version = data.aws_s3_object.debezium_plugin.version_id
+      object_version = data.aws_s3_object.debezium_plugin[0].version_id
     }
   }
 }
@@ -275,8 +278,8 @@ resource "aws_mskconnect_connector" "transport_cdc" {
 
   plugin {
     custom_plugin {
-      arn      = aws_mskconnect_custom_plugin.debezium_postgres.arn
-      revision = aws_mskconnect_custom_plugin.debezium_postgres.latest_revision
+      arn      = aws_mskconnect_custom_plugin.debezium_postgres[0].arn
+      revision = aws_mskconnect_custom_plugin.debezium_postgres[0].latest_revision
     }
   }
 
@@ -284,6 +287,9 @@ resource "aws_mskconnect_connector" "transport_cdc" {
     arn      = aws_mskconnect_worker_configuration.debezium.arn
     revision = aws_mskconnect_worker_configuration.debezium.latest_revision
   }
+
+  # NAT is provisioned when enabling MSK Connect; ensure the private route exists first.
+  depends_on = [aws_route.app_internet]
 
   service_execution_role_arn = aws_iam_role.msk_connect.arn
 

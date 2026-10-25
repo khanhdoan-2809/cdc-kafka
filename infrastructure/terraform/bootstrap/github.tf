@@ -194,12 +194,32 @@ data "aws_iam_policy_document" "github_apply_iam" {
       "iam:DetachRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
+      "iam:ListInstanceProfilesForRole",
 
       "iam:PassRole"
     ]
 
     resources = [
       "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
+    ]
+  }
+
+  statement {
+    sid    = "ManageProjectInstanceProfiles"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.project_name}-${var.environment}-*"
     ]
   }
 

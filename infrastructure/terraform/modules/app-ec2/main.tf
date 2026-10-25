@@ -108,9 +108,11 @@ resource "aws_instance" "this" {
     delete_on_termination = true
   }
 
+  # IMDSv2; hop limit 2 lets Docker containers use temporary EC2 IAM credentials.
   metadata_options {
-    http_endpoint = "enabled"  # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
-    http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
   }
 
   user_data                   = file("${path.module}/user-data.sh")

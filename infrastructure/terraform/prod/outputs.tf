@@ -27,12 +27,12 @@ output "database_subnet_ids" {
 
 output "nat_gateway_id" {
   description = "NAT Gateway used by application subnets."
-  value       = aws_nat_gateway.main.id
+  value       = try(aws_nat_gateway.main[0].id, null)
 }
 
 output "nat_public_ip" {
   description = "Public Elastic IP used by the NAT Gateway."
-  value       = aws_eip.nat.public_ip
+  value       = try(aws_eip.nat[0].public_ip, null)
 }
 
 ############ ECR Outputs ############
@@ -87,40 +87,16 @@ output "rds_master_secret_arn" {
   sensitive = true
 }
 
-############ ALB & ECS Outputs ############
-output "alb_dns_name" {
-  description = "Public DNS name of the transport-service ALB."
-  value       = aws_lb.transport.dns_name
+############ Application EC2 Outputs ############
+
+output "app_instance_id" {
+  description = "Production application EC2 instance ID (use AWS SSM)."
+  value       = module.app_ec2.instance_id
 }
 
-output "alb_url" {
-  description = "HTTP URL for the transport-service ALB."
-  value       = "http://${aws_lb.transport.dns_name}"
-}
-
-output "ecs_cluster_name" {
-  description = "ECS cluster name."
-  value       = aws_ecs_cluster.main.name
-}
-
-output "transport_ecs_service_name" {
-  description = "transport-service ECS service name."
-  value       = aws_ecs_service.transport.name
-}
-
-output "transport_task_definition_family" {
-  description = "transport-service task definition family."
-  value       = aws_ecs_task_definition.transport.family
-}
-
-output "transport_ecs_security_group_id" {
-  description = "Security group used by transport-service ECS tasks."
-  value       = aws_security_group.transport_ecs.id
-}
-
-output "alb_security_group_id" {
-  description = "Security group used by the public ALB."
-  value       = aws_security_group.alb.id
+output "app_public_ip" {
+  description = "Public IP of the app host. No public ingress is enabled yet."
+  value       = module.app_ec2.public_ip
 }
 
 ############ Database Bootstrap Outputs ############
@@ -138,21 +114,6 @@ output "audit_db_secret_arn" {
 output "debezium_db_secret_arn" {
   description = "Secrets Manager secret for Debezium database credentials."
   value       = aws_secretsmanager_secret.debezium_db.arn
-}
-
-output "db_bootstrap_task_definition_arn" {
-  description = "ECS task definition used for one-off database bootstrap."
-  value       = aws_ecs_task_definition.db_bootstrap.arn
-}
-
-output "db_bootstrap_security_group_id" {
-  description = "Security group used by the database bootstrap task."
-  value       = aws_security_group.db_bootstrap.id
-}
-
-output "db_bootstrap_log_group_name" {
-  description = "CloudWatch log group for database bootstrap."
-  value       = aws_cloudwatch_log_group.db_bootstrap.name
 }
 
 ############ MSK Outputs ############
@@ -175,26 +136,4 @@ output "msk_security_group_id" {
 output "msk_client_security_group_id" {
   description = "Security group to attach to applications that connect to MSK."
   value       = aws_security_group.msk_client.id
-}
-
-############ Audit Consumer Outputs ############
-
-output "audit_ecs_service_name" {
-  description = "Audit consumer ECS service name."
-  value       = aws_ecs_service.audit.name
-}
-
-output "audit_task_definition_family" {
-  description = "Audit consumer task definition family."
-  value       = aws_ecs_task_definition.audit.family
-}
-
-output "audit_task_role_arn" {
-  description = "IAM task role used by audit-consumer."
-  value       = aws_iam_role.audit_task.arn
-}
-
-output "audit_log_group_name" {
-  description = "CloudWatch log group for audit-consumer."
-  value       = aws_cloudwatch_log_group.audit.name
 }

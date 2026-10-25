@@ -82,7 +82,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
+      aws_s3_bucket.terraform_state.arn
     ]
   }
 
@@ -94,8 +94,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate",
-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate"
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
     ]
   }
 
@@ -109,8 +108,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate.tflock",
-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate.tflock"
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}.tflock"
     ]
   }
 }
@@ -201,7 +199,7 @@ data "aws_iam_policy_document" "github_apply_iam" {
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
     ]
   }
 
@@ -221,7 +219,7 @@ data "aws_iam_policy_document" "github_apply_iam" {
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-*"
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-${var.environment}-*"
     ]
   }
 

@@ -25,6 +25,7 @@ env:
   TF_INPUT: "false"
   TF_VAR_aws_region: ${{ vars.AWS_REGION }}
   TF_VAR_aws_account_id: ${{ vars.PROD_AWS_ACCOUNT_ID }}
+  TF_VAR_prod_allowed_cidr: ${{ vars.PROD_ALLOWED_CIDR }}
 
 defaults:
   run:

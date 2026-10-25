@@ -55,3 +55,7 @@ crash.*.log
 .env.*
 !.env.example
 !.env.dev.example
+
+# Keep production bootstrap credentials/state separate from DEV
+**/terraform.prod.tfvars
+**/.terraform-prod/

@@ -25,6 +25,20 @@ data "aws_iam_policy_document" "app_access" {
   }
 
   statement {
+    sid     = "DiscoverDatabaseEndpoint"
+    effect  = "Allow"
+    actions = ["rds:DescribeDBInstances"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "DiscoverMSKCluster"
+    effect  = "Allow"
+    actions = ["kafka:ListClustersV2", "kafka:GetBootstrapBrokers"]
+    resources = ["*"]
+  }
+
+  statement {
     sid     = "ConnectToMSK"
     effect  = "Allow"
     actions = ["kafka-cluster:Connect", "kafka-cluster:DescribeCluster", "kafka-cluster:WriteDataIdempotently"]

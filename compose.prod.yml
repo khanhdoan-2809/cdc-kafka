@@ -1,0 +1,49 @@
+# PROD runs application containers only. RDS and MSK are managed AWS services.
+# All ports are loopback-only; no public application ingress until HTTPS/auth is ready.
+x-common: &common
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  transport-service:
+    <<: *common
+    image: ${TRANSPORT_IMAGE}
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DB_HOST: ${RDS_HOST:?RDS_HOST is required}
+      DB_PORT: "5432"
+      DB_NAME: transport
+      DB_USERNAME: ${TRANSPORT_DB_USERNAME:?TRANSPORT_DB_USERNAME is required}
+      DB_PASSWORD: ${TRANSPORT_DB_PASSWORD:?TRANSPORT_DB_PASSWORD is required}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/transport?sslmode=require
+      SPRING_FLYWAY_URL: jdbc:postgresql://${RDS_HOST}:5432/transport?sslmode=require
+      TRANSPORT_DB_MAX_POOL_SIZE: "5"
+      TRANSPORT_DB_MIN_IDLE: "1"
+
+  audit-consumer:
+    <<: *common
+    image: ${AUDIT_IMAGE}
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: "8081"
+      AUDIT_DB_HOST: ${RDS_HOST}
+      AUDIT_DB_PORT: "5432"
+      AUDIT_DB_NAME: audit
+      AUDIT_DB_USERNAME: ${AUDIT_DB_USERNAME:?AUDIT_DB_USERNAME is required}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:?AUDIT_DB_PASSWORD is required}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/audit?sslmode=require
+      KAFKA_BOOTSTRAP_SERVERS: ${MSK_BROKERS:?MSK_BROKERS is required}
+      AUDIT_KAFKA_CONSUMER_ENABLED: "true"
+      AUDIT_DLT_REPLAY_ENABLED: "false"
+      AUDIT_DLT_REPLICATION_FACTOR: "3"
+      AUDIT_KAFKA_CONCURRENCY: "2"
+      AUDIT_DB_MAX_POOL_SIZE: "5"
+      AUDIT_DB_MIN_IDLE: "1"

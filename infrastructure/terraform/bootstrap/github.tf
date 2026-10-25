@@ -408,42 +408,38 @@ data "aws_iam_policy_document" "github_deploy" {
   }
 
   statement {
-    sid    = "DeployTransportService"
-    effect = "Allow"
-
-    actions = [
-      "ecs:DescribeServices",
-      "ecs:DescribeTaskDefinition",
-      "ecs:RegisterTaskDefinition",
-      "ecs:UpdateService"
-    ]
-
-    resources = [
-      "*"
-    ]
+    sid     = "FindProdHostAndCommands"
+    effect  = "Allow"
+    actions = ["ec2:DescribeInstances", "ssm:DescribeInstanceInformation", "ssm:GetCommandInvocation"]
+    resources = ["*"]
   }
 
   statement {
-    sid    = "PassProjectEcsRoles"
-    effect = "Allow"
+    sid       = "RunShellScriptDocument"
+    effect    = "Allow"
+    actions   = ["ssm:SendCommand"]
+    resources = ["arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}::document/AWS-RunShellScript"]
+  }
 
-    actions = [
-      "iam:PassRole"
-    ]
-
-    resources = [
-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
-    ]
+  statement {
+    sid     = "SendToProdHostOnly"
+    effect  = "Allow"
+    actions = ["ssm:SendCommand"]
+    resources = ["arn:${data.aws_partition.current.partition}:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"]
 
     condition {
       test     = "StringEquals"
-      variable = "iam:PassedToService"
+      variable = "ssm:resourceTag/Project"
+      values   = [var.project_name]
+    }
 
-      values = [
-        "ecs-tasks.amazonaws.com"
-      ]
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Environment"
+      values   = [var.environment]
     }
   }
+
 }
 
 resource "aws_iam_role_policy" "github_deploy" {

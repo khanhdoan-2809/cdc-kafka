@@ -113,7 +113,6 @@ public class KafkaErrorConfiguration {
                 );
             }
         });
-
         return errorHandler;
     }
 }

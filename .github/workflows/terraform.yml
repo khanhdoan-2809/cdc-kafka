@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "infrastructure/terraform/prod/**"
+      - "infrastructure/terraform/modules/app-ec2/**"
       - ".github/workflows/terraform.yml"
 
   push:
@@ -13,6 +14,7 @@ on:
       - main
     paths:
       - "infrastructure/terraform/prod/**"
+      - "infrastructure/terraform/modules/app-ec2/**"
       - ".github/workflows/terraform.yml"
 
   workflow_dispatch:
@@ -25,6 +27,7 @@ env:
   TF_INPUT: "false"
   TF_VAR_aws_region: ${{ vars.AWS_REGION }}
   TF_VAR_aws_account_id: ${{ vars.PROD_AWS_ACCOUNT_ID }}
+  TF_VAR_prod_allowed_cidr: ${{ vars.PROD_ALLOWED_CIDR }}
 
 defaults:
   run:
@@ -45,7 +48,9 @@ jobs:
           terraform_version: "1.14.0"
 
       - name: Terraform format
-        run: terraform fmt -check -recursive
+        run: |
+          terraform fmt -check -recursive .
+          terraform fmt -check -recursive ../modules/app-ec2
 
       - name: Terraform init
         run: terraform init -backend=false

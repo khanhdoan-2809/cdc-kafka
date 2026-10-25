@@ -5,6 +5,7 @@ on:
     branches: [dev]
     paths: &terraform_paths
       - "infrastructure/terraform/dev/**"
+      - "infrastructure/terraform/modules/app-ec2/**"
       - ".github/workflows/terraform-dev.yml"
 
   push:
@@ -38,6 +39,7 @@ jobs:
           terraform_version: "1.14.0"
 
       - run: terraform fmt -check -recursive
+      - run: terraform fmt -check -recursive ../modules/app-ec2
       - run: terraform init -backend=false
       - run: terraform validate
 

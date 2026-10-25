@@ -79,38 +79,22 @@ variable "db_multi_az" {
   default     = false
 }
 
-############ ECS ############
-variable "transport_container_port" {
-  description = "Port exposed by transport-service."
-  type        = number
-  default     = 8080
+############ Application EC2 ############
+
+variable "app_instance_type" {
+  description = "Production Docker host; larger than the DEV instance."
+  type        = string
+  default     = "t3a.large"
 }
 
-variable "transport_task_cpu" {
-  description = "Fargate CPU units for transport-service."
+variable "app_root_volume_size" {
+  description = "Encrypted gp3 root volume size in GiB."
   type        = number
-  default     = 512
-}
-
-variable "transport_task_memory" {
-  description = "Fargate memory in MiB for transport-service."
-  type        = number
-  default     = 1024
-}
-
-variable "transport_desired_count" {
-  description = "Number of transport-service ECS tasks."
-  type        = number
-  default     = 0
+  default     = 30
 }
 
 variable "enable_msk_connect" {
-  description = "Start Debezium only after database bootstrap and migrations."
+  description = "Enable only after database roles, schema and Debezium plugin are ready."
   type        = bool
   default     = false
-}
-
-variable "prod_allowed_cidr" {
-  description = "Trusted CIDR allowed to reach the temporary production HTTP endpoint."
-  type        = string
 }

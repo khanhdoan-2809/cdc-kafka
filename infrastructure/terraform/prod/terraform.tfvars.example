@@ -1,19 +1,21 @@
-project_name = "cdc-kafka"
-environment  = "prod"
-aws_region   = "ap-southeast-1"
+project_name   = "cdc-kafka"
+environment    = "prod"
+aws_region     = "ap-southeast-1"
+aws_account_id = "123456789012" # Production AWS account ID
+vpc_cidr       = "10.20.0.0/16"
 
-aws_account_id = "123456789012" # replace real AWS account ID
-vpc_cidr = "10.20.0.0/16"
+# One EC2 for transport-service and audit-consumer.
+app_instance_type    = "t3a.large"
+app_root_volume_size = 30
 
-db_name            = "transport"
-db_master_username = "cdc_admin"
-db_instance_class = "db.t4g.micro"
+# One private PostgreSQL RDS instance with transport + audit databases.
+db_name                  = "transport"
+audit_db_name            = "audit"
+db_master_username       = "cdc_admin"
+db_instance_class        = "db.t4g.small"
 db_allocated_storage     = 20
 db_max_allocated_storage = 100
-db_multi_az = false
+db_multi_az              = false
 
-transport_container_port = 8080
-transport_task_cpu    = 512
-transport_task_memory = 1024
-# Keep zero until DB bootstrap + CD are ready.
-transport_desired_count = 0
+# Enable after the database and Debezium plugin are initialized.
+enable_msk_connect = false

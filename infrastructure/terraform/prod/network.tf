@@ -122,6 +122,7 @@ resource "aws_route_table_association" "public" {
 ############ NAT Gateway ############
 
 resource "aws_eip" "nat" {
+  count  = var.enable_msk_connect ? 1 : 0
   domain = "vpc"
 
   tags = {
@@ -130,7 +131,9 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
+  count = var.enable_msk_connect ? 1 : 0
+
+  allocation_id = aws_eip.nat[0].id
 
   subnet_id = aws_subnet.public[0].id
 
@@ -144,8 +147,8 @@ resource "aws_nat_gateway" "main" {
 }
 
 ############ Application Private Route Table ############
-# ECS -> private app subnet -> NAT -> internet
-# internet can't initiate directly connection to ECS
+# Private MSK Connect workers -> NAT -> AWS APIs (Secrets Manager).
+# This NAT gateway is a fixed monthly cost; review after CDC is working.
 resource "aws_route_table" "app" {
   vpc_id = aws_vpc.main.id
 
@@ -155,11 +158,13 @@ resource "aws_route_table" "app" {
 }
 
 resource "aws_route" "app_internet" {
+  count = var.enable_msk_connect ? 1 : 0
+
   route_table_id = aws_route_table.app.id
 
   destination_cidr_block = "0.0.0.0/0"
 
-  nat_gateway_id = aws_nat_gateway.main.id
+  nat_gateway_id = aws_nat_gateway.main[0].id
 }
 
 resource "aws_route_table_association" "app" {

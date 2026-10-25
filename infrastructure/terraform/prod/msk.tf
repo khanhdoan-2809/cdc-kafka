@@ -32,6 +32,15 @@ resource "aws_vpc_security_group_ingress_rule" "msk_from_clients" {
   to_port     = 9098
 }
 
+resource "aws_vpc_security_group_ingress_rule" "msk_from_app_ec2" {
+  security_group_id            = aws_security_group.msk.id
+  referenced_security_group_id = aws_security_group.app_ec2.id
+  description                  = "Allow production Docker host to connect over IAM TLS"
+  ip_protocol                  = "tcp"
+  from_port                    = 9098
+  to_port                      = 9098
+}
+
 resource "aws_vpc_security_group_egress_rule" "msk_outbound" {
   security_group_id = aws_security_group.msk.id
 

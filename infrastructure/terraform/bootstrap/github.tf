@@ -82,7 +82,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
+      aws_s3_bucket.terraform_state.arn
     ]
   }
 
@@ -94,8 +94,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate",
-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate"
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
     ]
   }
 
@@ -109,8 +108,7 @@ data "aws_iam_policy_document" "github_plan_state" {
     ]
 
     resources = [
-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate.tflock",
-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate.tflock"
+      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}.tflock"
     ]
   }
 }
@@ -196,12 +194,32 @@ data "aws_iam_policy_document" "github_apply_iam" {
       "iam:DetachRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
+      "iam:ListInstanceProfilesForRole",
 
       "iam:PassRole"
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
+    ]
+  }
+
+  statement {
+    sid    = "ManageProjectInstanceProfiles"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.project_name}-${var.environment}-*"
     ]
   }
 
@@ -221,7 +239,7 @@ data "aws_iam_policy_document" "github_apply_iam" {
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-*"
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-${var.environment}-*"
     ]
   }
 
@@ -389,43 +407,62 @@ data "aws_iam_policy_document" "github_deploy" {
     ]
   }
 
+  # Only the one-time production DB bootstrap workflow writes these secrets.
   statement {
-    sid    = "DeployTransportService"
+    sid    = "BootstrapProductionDatabaseCredentials"
     effect = "Allow"
-
     actions = [
-      "ecs:DescribeServices",
-      "ecs:DescribeTaskDefinition",
-      "ecs:RegisterTaskDefinition",
-      "ecs:UpdateService"
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue"
     ]
-
     resources = [
-      "*"
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/database/transport-app-??????",
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/database/audit-app-??????",
+      "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/${var.environment}/database/debezium-??????"
     ]
   }
 
   statement {
-    sid    = "PassProjectEcsRoles"
-    effect = "Allow"
+    sid       = "GenerateProductionDatabasePasswords"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetRandomPassword"]
+    resources = ["*"]
+  }
 
-    actions = [
-      "iam:PassRole"
-    ]
+  statement {
+    sid     = "FindProdHostAndCommands"
+    effect  = "Allow"
+    actions = ["ec2:DescribeInstances", "ssm:DescribeInstanceInformation", "ssm:GetCommandInvocation"]
+    resources = ["*"]
+  }
 
-    resources = [
-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
-    ]
+  statement {
+    sid       = "RunShellScriptDocument"
+    effect    = "Allow"
+    actions   = ["ssm:SendCommand"]
+    resources = ["arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}::document/AWS-RunShellScript"]
+  }
+
+  statement {
+    sid     = "SendToProdHostOnly"
+    effect  = "Allow"
+    actions = ["ssm:SendCommand"]
+    resources = ["arn:${data.aws_partition.current.partition}:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"]
 
     condition {
       test     = "StringEquals"
-      variable = "iam:PassedToService"
+      variable = "ssm:resourceTag/Project"
+      values   = [var.project_name]
+    }
 
-      values = [
-        "ecs-tasks.amazonaws.com"
-      ]
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Environment"
+      values   = [var.environment]
     }
   }
+
 }
 
 resource "aws_iam_role_policy" "github_deploy" {

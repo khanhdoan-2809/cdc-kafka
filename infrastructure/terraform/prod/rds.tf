@@ -119,24 +119,12 @@ resource "aws_db_instance" "postgres" {
 
 ############ RDS Access ############
 
-resource "aws_vpc_security_group_ingress_rule" "rds_from_transport" {
+resource "aws_vpc_security_group_ingress_rule" "rds_from_app_ec2" {
   security_group_id = aws_security_group.rds.id
 
-  referenced_security_group_id = aws_security_group.transport_ecs.id
+  referenced_security_group_id = aws_security_group.app_ec2.id
 
-  description = "Allow PostgreSQL from transport-service"
-
-  ip_protocol = "tcp"
-  from_port   = 5432
-  to_port     = 5432
-}
-
-resource "aws_vpc_security_group_ingress_rule" "rds_from_bootstrap" {
-  security_group_id = aws_security_group.rds.id
-
-  referenced_security_group_id = aws_security_group.db_bootstrap.id
-
-  description = "Allow PostgreSQL from database bootstrap task"
+  description = "Allow PostgreSQL from application Docker host"
 
   ip_protocol = "tcp"
   from_port   = 5432

@@ -28,8 +28,18 @@ spring:
     user: ${DB_USERNAME:transport}
     password: ${DB_PASSWORD:transport}
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          public-key-location: classpath:public.pem
+
   lifecycle:
     timeout-per-shutdown-phase: 20s
+
+jwt:
+  private-key: classpath:private-key.pem
+  expiration: 3600000  # 1 hour
 
 server:
   port: ${SERVER_PORT:8080}

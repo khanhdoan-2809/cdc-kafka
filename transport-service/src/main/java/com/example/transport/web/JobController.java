@@ -8,25 +8,28 @@ import com.example.transport.web.dto.JobResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 public class JobController {
 
     private final JobService jobService;
+
+//    @PreAuthorize("hasAuthority('reports:read')")
+    @GetMapping("/api/transports/{transportId}/jobs")
+    public List<JobResponse> getByTransport(@PathVariable Long transportId) {
+        return jobService.findByTransportId(transportId).stream().map(this::toResponse).toList();
+    }
 
     @PostMapping("/api/transports/{transportId}/jobs")
     @ResponseStatus(HttpStatus.CREATED)
     public JobResponse create(@PathVariable Long transportId, @Valid @RequestBody CreateJobRequest request) {
         return toResponse(jobService.create(transportId, request.reference()));
-    }
-
-    @GetMapping("/api/transports/{transportId}/jobs")
-    public List<JobResponse> getByTransport(@PathVariable Long transportId) {
-        return jobService.findByTransportId(transportId).stream().map(this::toResponse).toList();
     }
 
     @GetMapping("/api/jobs/{id}")

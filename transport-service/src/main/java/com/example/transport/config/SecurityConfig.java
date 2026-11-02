@@ -82,8 +82,8 @@ public class SecurityConfig {
 
         // Nếu JWT chứa roles trong claim "roles"
         // và giá trị là ["ADMIN", "USER"] (không có prefix ROLE_)
-        grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("role");
+        grantedAuthoritiesConverter.setAuthorityPrefix("");
+        grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
 
         var jwtAuthenticationConverter = new JwtAuthenticationConverter();
         jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);

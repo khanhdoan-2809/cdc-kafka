@@ -2,10 +2,12 @@ package com.example.transport.web.context;
 
 import com.example.transport.application.context.ActorType;
 import com.example.transport.application.context.RequestContext;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -21,7 +23,6 @@ public class RequestContextFilterCustom extends OncePerRequestFilter {
 
     public static final String REQUEST_CONTEXT_ATTRIBUTE = RequestContext.class.getName();
 
-    public static final String USER_ID_HEADER = "X-User-Id";
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
     public static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
 
@@ -29,27 +30,19 @@ public class RequestContextFilterCustom extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
+            HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
 
-        var actorId = normalize(request.getHeader(USER_ID_HEADER));
+        String actorId = null; // Identity is populated only after verified bearer authentication.
 
         var requestId = resolveId(request.getHeader(REQUEST_ID_HEADER));
 
         var correlationIdHeader = normalize(request.getHeader(CORRELATION_ID_HEADER));
         var correlationId = correlationIdHeader != null ? correlationIdHeader : requestId;
 
-        var actorType = actorId != null
-                ? ActorType.USER
-                : ActorType.ANONYMOUS;
+        var actorType = actorId != null ? ActorType.USER : ActorType.ANONYMOUS;
 
-        var context = new RequestContext(
-                actorId,
-                actorType,
-                requestId,
-                correlationId
-        );
+        var context = new RequestContext(actorId, actorType, requestId, correlationId);
 
         request.setAttribute(REQUEST_CONTEXT_ATTRIBUTE, context);
 
@@ -68,9 +61,7 @@ public class RequestContextFilterCustom extends OncePerRequestFilter {
     private String resolveId(String value) {
         var normalized = normalize(value);
 
-        return normalized != null
-                ? normalized
-                : UUID.randomUUID().toString();
+        return normalized != null ? normalized : UUID.randomUUID().toString();
     }
 
     private String normalize(String value) {

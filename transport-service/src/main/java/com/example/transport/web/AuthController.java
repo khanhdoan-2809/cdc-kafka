@@ -1,42 +1,38 @@
 package com.example.transport.web;
 
-import com.example.transport.domain.auth.LoginRequest;
-import com.example.transport.domain.auth.LoginResponse;
-import com.example.transport.security.JwtService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.example.transport.domain.auth.*;
+import com.example.transport.security.*;
 
-import java.util.stream.Collectors;
+import jakarta.validation.Valid;
+
+import lombok.RequiredArgsConstructor;
+
+import org.springframework.security.authentication.*;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
-
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
 
     @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest request) {
-        var authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getUsername(),
-                        request.getPassword()
-                )
-        );
-
-        var roles = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList());
-
-        var token = jwtService.generateToken(request.getUsername(), roles);
-
-        return new LoginResponse(token, "Bearer");
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
+        if (request.getPassword().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72)
+            throw new BadCredentialsException("Invalid credentials");
+        var authentication =
+                authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(
+                                request.getUsername(), request.getPassword()));
+        var principal = (AccountPrincipal) authentication.getPrincipal();
+        var roles =
+                authentication.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .toList();
+        var token =
+                jwtService.generateToken(principal.getAccountId(), principal.getUsername(), roles);
+        return new LoginResponse(token, "Bearer", jwtService.expiresIn());
     }
 }

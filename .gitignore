@@ -59,3 +59,8 @@ crash.*.log
 # Keep production bootstrap credentials/state separate from DEV
 **/terraform.prod.tfvars
 **/.terraform-prod/
+
+# Runtime authentication secrets and local verification logs
+/secrets/
+*.pem
+work-*.log

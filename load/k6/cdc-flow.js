@@ -69,12 +69,20 @@ export const options = {
     }
 };
 
-function headers(actor) {
+export function setup() {
+    const response = http.post(`${baseUrl}/api/auth/login`, JSON.stringify({
+        username: __ENV.K6_USERNAME, password: __ENV.K6_PASSWORD
+    }), { headers: { 'Content-Type': 'application/json' } });
+    if (response.status !== 200) fail(`Login failed: HTTP ${response.status}`);
+    return { token: response.json('accessToken') };
+}
+
+function headers(token) {
     const id = `${__VU}-${__ITER}-${Date.now()}`;
 
     return {
         'Content-Type': 'application/json',
-        'X-User-Id': actor,
+        'Authorization': `Bearer ${token}`,
         'X-Request-Id': `load-${id}`,
         'X-Correlation-Id': `load-${id}`
     };
@@ -98,11 +106,10 @@ function requireId(response, name) {
     return body.id;
 }
 
-export function cdcFlow() {
+export function cdcFlow(data) {
     const unique = `${__VU}-${__ITER}-${Date.now()}`;
-    const actor = `k6-user-${__VU}`;
     const params = {
-        headers: headers(actor)
+        headers: headers(data.token)
     };
 
     const transportResponse = http.post(

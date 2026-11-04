@@ -13,11 +13,8 @@ public class AuthenticationManagerConfig {
 
     @Bean
     public AuthenticationManager authenticationManager(
-            UserDetailsService userDetailsService,
-            PasswordEncoder passwordEncoder
-    ) {
-        var authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService);
+            UserDetailsService userDetailsService, PasswordEncoder passwordEncoder) {
+        var authProvider = new DaoAuthenticationProvider(userDetailsService);
         authProvider.setPasswordEncoder(passwordEncoder);
 
         return new ProviderManager(authProvider);

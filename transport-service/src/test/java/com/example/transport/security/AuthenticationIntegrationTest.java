@@ -87,10 +87,25 @@ class AuthenticationIntegrationTest {
         accounts.deleteAll();
         user =
                 accounts.saveAndFlush(
-                        new Account("user", passwords.encode("user-test-password"), "USER"));
+                        verified(
+                                new Account(
+                                        "user",
+                                        passwords.encode("user-test-password"),
+                                        "USER",
+                                        "user@test.invalid")));
         admin =
                 accounts.saveAndFlush(
-                        new Account("admin", passwords.encode("admin-test-password"), "ADMIN"));
+                        verified(
+                                new Account(
+                                        "admin",
+                                        passwords.encode("admin-test-password"),
+                                        "ADMIN",
+                                        "admin@test.invalid")));
+    }
+
+    static Account verified(Account account) {
+        account.verifyEmail();
+        return account;
     }
 
     String login(String username, String password) throws Exception {
@@ -110,6 +125,18 @@ class AuthenticationIntegrationTest {
                         .andExpect(jsonPath("expiresIn").value(900))
                         .andReturn();
         return json.readTree(result.getResponse().getContentAsString()).get("accessToken").asText();
+    }
+
+    @Test
+    void registrationIsDisabledByDefault() throws Exception {
+        long before = accounts.count();
+        mvc.perform(
+                        post("/api/auth/register")
+                                .contentType("application/json")
+                                .content(
+                                        "{\"username\":\"new-user\",\"email\":\"new@test.invalid\",\"password\":\"valid-long-password\"}"))
+                .andExpect(status().isNotFound());
+        assertThat(accounts.count()).isEqualTo(before);
     }
 
     @Test
@@ -176,10 +203,12 @@ class AuthenticationIntegrationTest {
         assertThat(persisted.getUpdatedBy()).isEqualTo(admin.getId().toString());
         var secondAdmin =
                 accounts.saveAndFlush(
-                        new Account(
-                                "second-admin",
-                                passwords.encode("second-admin-test-password"),
-                                "ADMIN"));
+                        verified(
+                                new Account(
+                                        "second-admin",
+                                        passwords.encode("second-admin-test-password"),
+                                        "ADMIN",
+                                        "second-admin@test.invalid")));
         String adminBearer = login("second-admin", "second-admin-test-password");
         mvc.perform(
                         patch("/api/transports/{id}/status", id)

@@ -18,8 +18,15 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     private final int maxPeers;
     private final Duration duration;
     private final Clock clock;
+    private final Set<String> paths;
 
     public LoginRateLimitFilter(int attempts, int maxPeers, Duration duration, Clock clock) {
+        this(attempts, maxPeers, duration, clock, Set.of("/api/auth/login"));
+    }
+
+    public LoginRateLimitFilter(
+            int attempts, int maxPeers, Duration duration, Clock clock, Set<String> paths) {
+        this.paths = Set.copyOf(paths);
         if (attempts < 1 || maxPeers < 1 || duration.isNegative() || duration.isZero())
             throw new IllegalArgumentException("Invalid login rate limit");
         this.attempts = attempts;
@@ -43,12 +50,15 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     }
 
     @Override
+    protected String getAlreadyFilteredAttributeName() {
+        return getClass().getName() + "." + String.join(",", new TreeSet<>(paths)) + ".FILTERED";
+    }
+
+    @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !("POST".equals(request.getMethod())
-                && "/api/auth/login"
-                        .equals(
-                                request.getRequestURI()
-                                        .substring(request.getContextPath().length())));
+                && paths.contains(
+                        request.getRequestURI().substring(request.getContextPath().length())));
     }
 
     @Override

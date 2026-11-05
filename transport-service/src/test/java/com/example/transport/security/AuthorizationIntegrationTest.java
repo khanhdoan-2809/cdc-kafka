@@ -73,18 +73,39 @@ class AuthorizationIntegrationTest {
     @BeforeEach
     void seed() {
         jdbc.execute("TRUNCATE transport, auth_user RESTART IDENTITY CASCADE");
-        admin = accounts.saveAndFlush(new Account("admin", "unused-test-password", "ADMIN"));
-        alice = accounts.saveAndFlush(new Account("alice", "unused-test-password", "USER"));
-        bob = accounts.saveAndFlush(new Account("bob", "unused-test-password", "USER"));
+        admin =
+                accounts.saveAndFlush(
+                        AuthenticationIntegrationTest.verified(
+                                new Account(
+                                        "admin",
+                                        "unused-test-password",
+                                        "ADMIN",
+                                        "admin@test.invalid")));
+        alice =
+                accounts.saveAndFlush(
+                        AuthenticationIntegrationTest.verified(
+                                new Account(
+                                        "alice",
+                                        "unused-test-password",
+                                        "USER",
+                                        "alice@test.invalid")));
+        bob =
+                accounts.saveAndFlush(
+                        AuthenticationIntegrationTest.verified(
+                                new Account(
+                                        "bob",
+                                        "unused-test-password",
+                                        "USER",
+                                        "bob@test.invalid")));
         adminToken = token(admin);
         aliceToken = token(alice);
         bobToken = token(bob);
         for (long transport : List.of(10L, 20L, 30L)) {
             jdbc.update(
                     "INSERT INTO transport"
-                        + " (id,reference,status,created_at,updated_at,created_by,updated_by)"
-                        + " OVERRIDING SYSTEM VALUE VALUES"
-                        + " (?,?,'CREATED',now(),now(),'fixture','fixture')",
+                            + " (id,reference,status,created_at,updated_at,created_by,updated_by)"
+                            + " OVERRIDING SYSTEM VALUE VALUES"
+                            + " (?,?,'CREATED',now(),now(),'fixture','fixture')",
                     transport,
                     "T-" + transport);
             jdbc.update(

@@ -58,4 +58,34 @@ class LoginRateLimitFilterTest {
                 (req, res) -> calls.incrementAndGet());
         assertThat(calls.get()).isEqualTo(2);
     }
+
+    @Test
+    void registrationRoutesShareTheirOwnLimitAndDoNotDisableLoginThrottling() throws Exception {
+        var login = new LoginRateLimitFilter(1, 10, Duration.ofMinutes(1), Clock.systemUTC());
+        var registration =
+                new LoginRateLimitFilter(
+                        1,
+                        10,
+                        Duration.ofMinutes(1),
+                        Clock.systemUTC(),
+                        java.util.Set.of(
+                                "/api/auth/register",
+                                "/api/auth/verify-email",
+                                "/api/auth/resend-verification"));
+        var paths =
+                java.util.List.of(
+                        "/api/auth/register",
+                        "/api/auth/resend-verification",
+                        "/api/auth/login",
+                        "/api/auth/login");
+        var expected = java.util.List.of(200, 429, 200, 429);
+        for (int i = 0; i < paths.size(); i++) {
+            var request = new MockHttpServletRequest("POST", paths.get(i));
+            request.setRemoteAddr("127.0.0.1");
+            var response = new MockHttpServletResponse();
+            login.doFilter(
+                    request, response, (req, res) -> registration.doFilter(req, res, (a, b) -> {}));
+            assertThat(response.getStatus()).isEqualTo(expected.get(i));
+        }
+    }
 }

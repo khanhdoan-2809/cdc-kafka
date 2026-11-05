@@ -45,14 +45,24 @@ public class SecurityConfig {
             @Value("${auth.login.max-peers:10000}") int maxPeers,
             @Value("${auth.login.window:PT1M}") Duration window)
             throws Exception {
-        http.csrf(AbstractHttpConfigurer::disable)
+        http
+                // 1. Tắt CSRF vì API stateless
+                .csrf(AbstractHttpConfigurer::disable)
+
+                // 2. Cấu hình CORS (nếu cần)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // 3. Stateless session (không tạo session)
                 .sessionManagement(
                         session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // 4. Exception handling cho 401/403
                 .exceptionHandling(
                         ex ->
                                 ex.authenticationEntryPoint(authenticationEntryPoint)
                                         .accessDeniedHandler(accessDeniedHandler))
+
+                // 5. Phân quyền endpoint
                 .authorizeHttpRequests(
                         authorize ->
                                 authorize
@@ -68,6 +78,8 @@ public class SecurityConfig {
                                         .permitAll()
                                         .anyRequest()
                                         .authenticated())
+
+                // 6. Kích hoạt OAuth2 Resource Server với JWT
                 .oauth2ResourceServer(
                         oauth2 ->
                                 oauth2.authenticationEntryPoint(authenticationEntryPoint)
@@ -104,12 +116,18 @@ public class SecurityConfig {
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         var grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
 
+        // Nếu JWT chứa roles trong claim "roles"
+        // và giá trị là ["ADMIN", "USER"] (không có prefix ROLE_)
+        // thì cần thêm prefix ROLE_. Hiện tại token chứa ["ROLE_ADMIN", "ROLE_USER"],
+        // nên giữ nguyên authority bằng prefix rỗng để hasRole('ADMIN') hoạt động.
         grantedAuthoritiesConverter.setAuthorityPrefix("");
         grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
 
         var jwtAuthenticationConverter = new JwtAuthenticationConverter();
         jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
 
+        // (Tùy chọn) Đặt claim làm principal name (mặc định là "sub")
+        // sub hiện là UUID tài khoản đã xác thực, được dùng làm actor trong audit.
         jwtAuthenticationConverter.setPrincipalClaimName("sub");
 
         return jwtAuthenticationConverter;

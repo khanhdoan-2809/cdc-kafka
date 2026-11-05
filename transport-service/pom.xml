@@ -75,6 +75,9 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- JJWT - Thư viện tạo và verify JWT -->
+        <!-- Ghi chú cũ được giữ lại: JJWT đã được thay bằng JwtEncoder/JwtDecoder của Spring Security,
+             sử dụng Nimbus từ OAuth2 Resource Server bên dưới. -->
         <!-- OAuth2 Resource Server - Quan trọng để giải mã JWT -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

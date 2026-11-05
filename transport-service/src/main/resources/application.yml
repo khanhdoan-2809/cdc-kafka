@@ -32,10 +32,11 @@ spring:
     timeout-per-shutdown-phase: 20s
 
 jwt:
-  private-key: ${JWT_PRIVATE_KEY}
+  private-key: ${JWT_PRIVATE_KEY}  # Dùng để sign token
   public-key: ${JWT_PUBLIC_KEY}
   issuer: ${JWT_ISSUER}
   audience: ${JWT_AUDIENCE}
+  # expiration: 3600000  # 1 hour (cấu hình cũ; đã thay bằng ttl bên dưới)
   ttl: ${JWT_TTL:PT15M}
 
 auth:

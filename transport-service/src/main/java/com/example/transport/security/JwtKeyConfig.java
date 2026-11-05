@@ -53,6 +53,7 @@ public class JwtKeyConfig {
     }
 
     private byte[] readPem(ResourceLoader loader, String location, String type) throws Exception {
+        // Dùng InputStream để tránh lỗi khi chạy từ JAR
         try (var input = loader.getResource(location).getInputStream()) {
             String pem = new String(input.readAllBytes(), StandardCharsets.US_ASCII);
             return Base64.getDecoder()

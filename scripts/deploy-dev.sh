@@ -27,6 +27,8 @@ GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)
 ENV
 fi
 
+bash scripts/init-dev-auth.sh
+
 export TRANSPORT_IMAGE="${ECR_REGISTRY}/cdc-kafka-transport-service:${COMMIT_SHA}"
 export AUDIT_IMAGE="${ECR_REGISTRY}/cdc-kafka-audit-consumer:${COMMIT_SHA}"
 

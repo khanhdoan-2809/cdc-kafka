@@ -28,18 +28,25 @@ spring:
     user: ${DB_USERNAME:transport}
     password: ${DB_PASSWORD:transport}
 
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          public-key-location: classpath:public.pem
-
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
 jwt:
-  private-key: classpath:private-key.pem
-  expiration: 3600000  # 1 hour
+  private-key: ${JWT_PRIVATE_KEY}  # Dùng để sign token
+  public-key: ${JWT_PUBLIC_KEY}
+  issuer: ${JWT_ISSUER}
+  audience: ${JWT_AUDIENCE}
+  # expiration: 3600000  # 1 hour (cấu hình cũ; đã thay bằng ttl bên dưới)
+  ttl: ${JWT_TTL:PT15M}
+
+auth:
+  bootstrap:
+    username: ${AUTH_BOOTSTRAP_USERNAME:}
+    password: ${AUTH_BOOTSTRAP_PASSWORD:}
+  login:
+    max-attempts: ${AUTH_LOGIN_MAX_ATTEMPTS:10}
+    max-peers: ${AUTH_LOGIN_MAX_PEERS:10000}
+    window: ${AUTH_LOGIN_WINDOW:PT1M}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -67,3 +74,5 @@ management:
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [actorId=%X{actorId}] [requestId=%X{requestId}] [correlationId=%X{correlationId}] %logger{36} - %msg%n"
+monitoring:
+  password: ${MONITORING_PASSWORD}

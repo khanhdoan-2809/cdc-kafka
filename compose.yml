@@ -266,7 +266,13 @@ services:
     build:
       context: ./transport-service
     container_name: transport-service
+    env_file:
+      - ./secrets/auth.env
+    volumes:
+      - ./secrets/jwt:/run/secrets/jwt:ro
     environment:
+      JWT_PRIVATE_KEY: file:/run/secrets/jwt/private-key.pem
+      JWT_PUBLIC_KEY: file:/run/secrets/jwt/public.pem
       DB_HOST: transport-postgres
       DB_PORT: 5432
       DB_NAME: ${TRANSPORT_DB_NAME:-transport}
@@ -341,6 +347,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
+      - ./secrets/monitoring-password:/run/secrets/monitoring-password:ro
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
     logging: *default-logging

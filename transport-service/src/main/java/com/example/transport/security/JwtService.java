@@ -1,65 +1,59 @@
 package com.example.transport.security;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.*;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.security.KeyFactory;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.util.Base64;
-import java.util.Date;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.time.*;
+import java.util.*;
 
 @Service
 public class JwtService {
+    private final JwtEncoder encoder;
+    private final String issuer;
+    private final String audience;
+    private final Duration ttl;
 
-    @Value("${jwt.expiration:3600000}")
-    private long expiration;
-
-    private final PrivateKey privateKey;
-
-    public JwtService(@Value("${jwt.private-key}") Resource privateKeyResource)
-            throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
-        this.privateKey = loadPrivateKey(privateKeyResource);
-    }
-
-    private PrivateKey loadPrivateKey(Resource resource) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
-        // Dùng InputStream để tránh lỗi khi chạy từ JAR
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(resource.getInputStream()))) {
-            String key = reader.lines().collect(Collectors.joining("\n"));
-            String privateKeyContent = key
-                    .replace("-----BEGIN PRIVATE KEY-----", "")
-                    .replace("-----END PRIVATE KEY-----", "")
-                    .replaceAll("\\s", "");
-
-            byte[] keyBytes = Base64.getDecoder().decode(privateKeyContent);
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            return keyFactory.generatePrivate(keySpec);
+    public JwtService(
+            JwtEncoder encoder,
+            @Value("${jwt.issuer}") String issuer,
+            @Value("${jwt.audience}") String audience,
+            @Value("${jwt.ttl}") Duration ttl) {
+        if (issuer.isBlank()
+                || audience.isBlank()
+                || ttl.compareTo(Duration.ofSeconds(1)) < 0
+                || ttl.compareTo(Duration.ofHours(1)) > 0) {
+            throw new IllegalArgumentException(
+                    "JWT issuer/audience required; TTL must be 1 second to one hour");
         }
+        this.encoder = encoder;
+        this.issuer = issuer;
+        this.audience = audience;
+        this.ttl = ttl;
     }
 
-    public String generateToken(String username, List
-            <String> roles) {
-        Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + expiration);
+    public String generateToken(String accountId, String username, List<String> roles) {
+        Instant now = Instant.now();
+        var claims =
+                JwtClaimsSet.builder()
+                        .subject(accountId)
+                        .claim("username", username)
+                        .issuer(issuer)
+                        .audience(List.of(audience))
+                        .claim("roles", roles)
+                        .id(UUID.randomUUID().toString())
+                        .issuedAt(now)
+                        .notBefore(now)
+                        .expiresAt(now.plus(ttl))
+                        .build();
+        return encoder.encode(
+                        JwtEncoderParameters.from(
+                                JwsHeader.with(SignatureAlgorithm.RS256).build(), claims))
+                .getTokenValue();
+    }
 
-        return Jwts.builder()
-                .subject(username)
-                .claim("roles", roles)
-                .issuedAt(now)
-                .expiration(expiryDate)
-                .signWith(privateKey, SignatureAlgorithm.RS256)
-                .compact();
+    public long expiresIn() {
+        return ttl.toSeconds();
     }
 }

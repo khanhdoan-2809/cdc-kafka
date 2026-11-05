@@ -7,6 +7,8 @@ services:
 
     environment:
       K6_BASE_URL: ${K6_BASE_URL:-http://transport-service:8080}
+      K6_USERNAME: ${K6_USERNAME:?K6_USERNAME is required}
+      K6_PASSWORD: ${K6_PASSWORD:?K6_PASSWORD is required}
       K6_PROFILE: ${K6_PROFILE:-baseline}
 
     volumes:

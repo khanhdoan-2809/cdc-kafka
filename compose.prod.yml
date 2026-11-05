@@ -15,7 +15,13 @@ services:
     image: ${TRANSPORT_IMAGE}
     ports:
       - "127.0.0.1:8080:8080"
+    env_file:
+      - ${AUTH_ENV_FILE:-/etc/cdc-kafka/auth.env}
+    volumes:
+      - ${JWT_KEYS_DIR:-/etc/cdc-kafka/jwt}:/run/secrets/jwt:ro
     environment:
+      JWT_PRIVATE_KEY: file:/run/secrets/jwt/private-key.pem
+      JWT_PUBLIC_KEY: file:/run/secrets/jwt/public.pem
       DB_HOST: ${RDS_HOST:?RDS_HOST is required}
       DB_PORT: "5432"
       DB_NAME: transport

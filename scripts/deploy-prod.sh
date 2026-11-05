@@ -16,6 +16,11 @@ if [[ ! -f /var/lib/cdc-kafka/bootstrap-ready ]]; then
   exit 1
 fi
 
+# Authentication secrets are provisioned separately from release configuration.
+for auth_file in /etc/cdc-kafka/auth.env /etc/cdc-kafka/jwt/private-key.pem /etc/cdc-kafka/jwt/public.pem; do
+  [[ -s "$auth_file" ]] || { echo "Missing authentication file: $auth_file" >&2; exit 1; }
+done
+
 # AL2023 has network access through the host's public subnet.
 if ! command -v jq >/dev/null; then dnf install -y -q jq >/dev/null; fi
 

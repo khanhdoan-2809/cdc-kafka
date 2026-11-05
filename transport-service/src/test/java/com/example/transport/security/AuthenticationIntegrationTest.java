@@ -157,7 +157,7 @@ class AuthenticationIntegrationTest {
 
     @Test
     void writesUseSubjectAndIgnoreSpoofedActorHeader() throws Exception {
-        String bearer = login("user", "user-test-password");
+        String bearer = login("admin", "admin-test-password");
         var response =
                 mvc.perform(
                                 post("/api/transports")
@@ -172,9 +172,15 @@ class AuthenticationIntegrationTest {
                         .andReturn();
         long id = json.readTree(response.getResponse().getContentAsString()).get("id").asLong();
         var persisted = transports.findById(id).orElseThrow();
-        assertThat(persisted.getCreatedBy()).isEqualTo(user.getId().toString());
-        assertThat(persisted.getUpdatedBy()).isEqualTo(user.getId().toString());
-        String adminBearer = login("admin", "admin-test-password");
+        assertThat(persisted.getCreatedBy()).isEqualTo(admin.getId().toString());
+        assertThat(persisted.getUpdatedBy()).isEqualTo(admin.getId().toString());
+        var secondAdmin =
+                accounts.saveAndFlush(
+                        new Account(
+                                "second-admin",
+                                passwords.encode("second-admin-test-password"),
+                                "ADMIN"));
+        String adminBearer = login("second-admin", "second-admin-test-password");
         mvc.perform(
                         patch("/api/transports/{id}/status", id)
                                 .header("Authorization", "Bearer " + adminBearer)
@@ -182,9 +188,9 @@ class AuthenticationIntegrationTest {
                                 .content("{\"status\":\"IN_PROGRESS\"}"))
                 .andExpect(status().isOk());
         assertThat(transports.findById(id).orElseThrow().getUpdatedBy())
-                .isEqualTo(admin.getId().toString());
+                .isEqualTo(secondAdmin.getId().toString());
         assertThat(transports.findById(id).orElseThrow().getCreatedBy())
-                .isEqualTo(user.getId().toString());
+                .isEqualTo(admin.getId().toString());
     }
 
     @Test
@@ -200,11 +206,11 @@ class AuthenticationIntegrationTest {
     }
 
     @Test
-    void existingAdminRestrictionIsPreserved() throws Exception {
+    void unassignedUserReadsAreHiddenAndAdminReadsRemainAllowed() throws Exception {
         String userToken = login("user", "user-test-password");
         mvc.perform(get("/api/jobs/123").header("Authorization", "Bearer " + userToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("error").value("Forbidden"));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("error").value("Not Found"));
         // An admin passes authorization; use a real transport to obtain a successful response.
         String adminToken = login("admin", "admin-test-password");
         var created =

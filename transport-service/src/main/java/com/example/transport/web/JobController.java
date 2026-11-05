@@ -5,22 +5,24 @@ import com.example.transport.domain.job.Job;
 import com.example.transport.web.dto.ChangeJobStatusRequest;
 import com.example.transport.web.dto.CreateJobRequest;
 import com.example.transport.web.dto.JobResponse;
+
 import jakarta.validation.Valid;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpStatus;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
 public class JobController {
 
     private final JobService jobService;
 
-//    @PreAuthorize("hasAuthority('reports:read')")
+    //    @PreAuthorize("hasAuthority('reports:read')")
+    // Role and assigned-record checks are enforced by JobService for every entry point.
     @GetMapping("/api/transports/{transportId}/jobs")
     public List<JobResponse> getByTransport(@PathVariable Long transportId) {
         return jobService.findByTransportId(transportId).stream().map(this::toResponse).toList();
@@ -28,7 +30,8 @@ public class JobController {
 
     @PostMapping("/api/transports/{transportId}/jobs")
     @ResponseStatus(HttpStatus.CREATED)
-    public JobResponse create(@PathVariable Long transportId, @Valid @RequestBody CreateJobRequest request) {
+    public JobResponse create(
+            @PathVariable Long transportId, @Valid @RequestBody CreateJobRequest request) {
         return toResponse(jobService.create(transportId, request.reference()));
     }
 
@@ -38,7 +41,8 @@ public class JobController {
     }
 
     @PatchMapping("/api/jobs/{id}/status")
-    public JobResponse changeStatus(@PathVariable Long id, @Valid @RequestBody ChangeJobStatusRequest request) {
+    public JobResponse changeStatus(
+            @PathVariable Long id, @Valid @RequestBody ChangeJobStatusRequest request) {
         return toResponse(jobService.changeStatus(id, request.status()));
     }
 
@@ -49,7 +53,6 @@ public class JobController {
                 job.getReference(),
                 job.getStatus(),
                 job.getCreatedAt(),
-                job.getUpdatedAt()
-        );
+                job.getUpdatedAt());
     }
 }

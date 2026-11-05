@@ -17,7 +17,7 @@ The initialization script generates a fresh 3072-bit RSA pair and random initial
 
 Accounts are persisted in `auth_user` by Flyway V4. Passwords use BCrypt cost 12. The bootstrap username/password create an ADMIN only when the account table is empty; they never reset an existing account. There is no registration or user administration API in this change. Provision subsequent accounts through a controlled database administration process using generated UUIDs, BCrypt hashes and role `ADMIN` or `USER`; never store plaintext passwords. Username matching is case-sensitive. Bootstrap usernames accept 1-100 ASCII letters, digits, `.`, `_`, `@`, `-`; bootstrap passwords require at least 12 characters and at most 72 UTF-8 bytes. Remove bootstrap credentials from configuration after first provisioning and supply explicit smoke credentials thereafter.
 
-JWT subjects are immutable account UUIDs. Username is a separate claim. Existing `ROLE_ADMIN` / `ROLE_USER` authorities and the current job-controller restriction are preserved. This change does not implement the planned authorization policy.
+JWT subjects are immutable account UUIDs. Username is a separate claim. Existing `ROLE_ADMIN` / `ROLE_USER` authorities are preserved. USER can read only assigned transports and their active jobs/containers; ADMIN can manage all active records. See [authorization and DEV assignment setup](docs/authorization.md).
 
 ## Runtime configuration
 
@@ -58,4 +58,4 @@ The DEV smoke test authenticates with `SMOKE_USERNAME`/`SMOKE_PASSWORD`, falling
 ./mvnw -B clean verify
 ```
 
-Authentication integration tests use fresh temporary RSA keys and an H2 PostgreSQL-mode database. They cover real login/token validation, persisted audit identities, disabled accounts, invalid input, monitoring isolation and the existing admin restriction. Unit tests cover bootstrap and login rate limits. H2 tests do not run PostgreSQL Flyway migrations or the full Kafka/Debezium pipeline; run the authenticated DEV smoke test against the Compose environment before deployment.
+Authentication integration tests use fresh temporary RSA keys and an H2 PostgreSQL-mode database. They cover real login/token validation, persisted audit identities, disabled accounts, invalid input and monitoring isolation. Additional authorization tests run against real PostgreSQL 17 and exercise Flyway migrations, scoped reads and ADMIN-only writes. Unit tests cover bootstrap and login rate limits. The full Kafka/Debezium pipeline still requires the authenticated DEV smoke test before deployment.

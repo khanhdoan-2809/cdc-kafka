@@ -3,7 +3,10 @@ package com.example.transport.application;
 import com.example.transport.domain.container.ShippingContainer;
 import com.example.transport.domain.job.Job;
 import com.example.transport.domain.transport.Transport;
+
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class TransportHierarchyService {
 
@@ -38,12 +42,9 @@ public class TransportHierarchyService {
         return new CreatedTransport(transport, List.copyOf(createdJobs));
     }
 
-    public record NewJob(String reference, List<String> containerNumbers) {
-    }
+    public record NewJob(String reference, List<String> containerNumbers) {}
 
-    public record CreatedTransport(Transport transport, List<CreatedJob> jobs) {
-    }
+    public record CreatedTransport(Transport transport, List<CreatedJob> jobs) {}
 
-    public record CreatedJob(Job job, List<ShippingContainer> containers) {
-    }
+    public record CreatedJob(Job job, List<ShippingContainer> containers) {}
 }

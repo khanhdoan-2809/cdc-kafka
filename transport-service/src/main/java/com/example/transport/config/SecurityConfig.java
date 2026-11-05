@@ -66,9 +66,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(
                         authorize ->
                                 authorize
-                                        .requestMatchers(HttpMethod.POST, "/api/auth/login")
+                                        // Permit framework error rendering, not direct requests to
+                                        // /error.
+                                        .dispatcherTypeMatchers(
+                                                jakarta.servlet.DispatcherType.ERROR)
                                         .permitAll()
-                                        .requestMatchers("/api/public/**")
+                                        .requestMatchers(HttpMethod.POST, "/api/auth/login")
                                         .permitAll()
                                         .requestMatchers(
                                                 HttpMethod.GET,
@@ -76,8 +79,19 @@ public class SecurityConfig {
                                                 "/actuator/health/liveness",
                                                 "/actuator/health/readiness")
                                         .permitAll()
+                                        .requestMatchers(
+                                                HttpMethod.GET,
+                                                "/api/transports/**",
+                                                "/api/jobs/**",
+                                                "/api/containers/**")
+                                        .hasAnyRole("ADMIN", "USER")
+                                        .requestMatchers(
+                                                "/api/transports/**",
+                                                "/api/jobs/**",
+                                                "/api/containers/**")
+                                        .hasRole("ADMIN")
                                         .anyRequest()
-                                        .authenticated())
+                                        .denyAll())
 
                 // 6. Kích hoạt OAuth2 Resource Server với JWT
                 .oauth2ResourceServer(

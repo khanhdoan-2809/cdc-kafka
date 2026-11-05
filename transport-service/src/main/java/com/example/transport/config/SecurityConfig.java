@@ -43,7 +43,8 @@ public class SecurityConfig {
             HttpSecurity http,
             @Value("${auth.login.max-attempts:10}") int maxAttempts,
             @Value("${auth.login.max-peers:10000}") int maxPeers,
-            @Value("${auth.login.window:PT1M}") Duration window)
+            @Value("${auth.login.window:PT1M}") Duration window,
+            @Value("${auth.registration.max-attempts:10}") int registrationAttempts)
             throws Exception {
         http
                 // 1. Tắt CSRF vì API stateless
@@ -71,7 +72,12 @@ public class SecurityConfig {
                                         .dispatcherTypeMatchers(
                                                 jakarta.servlet.DispatcherType.ERROR)
                                         .permitAll()
-                                        .requestMatchers(HttpMethod.POST, "/api/auth/login")
+                                        .requestMatchers(
+                                                HttpMethod.POST,
+                                                "/api/auth/login",
+                                                "/api/auth/register",
+                                                "/api/auth/verify-email",
+                                                "/api/auth/resend-verification")
                                         .permitAll()
                                         .requestMatchers(
                                                 HttpMethod.GET,
@@ -108,6 +114,17 @@ public class SecurityConfig {
                         BearerTokenAuthenticationFilter.class)
                 .addFilterAfter(
                         new AuthenticatedActorFilter(), BearerTokenAuthenticationFilter.class);
+        http.addFilterBefore(
+                new LoginRateLimitFilter(
+                        registrationAttempts,
+                        maxPeers,
+                        window,
+                        Clock.systemUTC(),
+                        java.util.Set.of(
+                                "/api/auth/register",
+                                "/api/auth/verify-email",
+                                "/api/auth/resend-verification")),
+                BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

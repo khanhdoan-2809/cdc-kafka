@@ -20,6 +20,7 @@ services:
     volumes:
       - ${JWT_KEYS_DIR:-/etc/cdc-kafka/jwt}:/run/secrets/jwt:ro
     environment:
+      SPRING_PROFILES_ACTIVE: prod
       JWT_PRIVATE_KEY: file:/run/secrets/jwt/private-key.pem
       JWT_PUBLIC_KEY: file:/run/secrets/jwt/public.pem
       DB_HOST: ${RDS_HOST:?RDS_HOST is required}

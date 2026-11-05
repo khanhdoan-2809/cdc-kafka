@@ -10,7 +10,7 @@ public class AccountPrincipal extends User {
         super(
                 account.getUsername(),
                 account.getPasswordHash(),
-                account.isEnabled(),
+                account.isEnabled() && account.isEmailVerified(),
                 true,
                 true,
                 true,

@@ -1,7 +1,10 @@
 package com.example.transport.config;
 
+import com.example.transport.security.AccountSessionStore;
+import com.example.transport.security.LiveAccountFilter;
 import com.example.transport.security.LoginRateLimitFilter;
 import com.example.transport.web.context.AuthenticatedActorFilter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -41,6 +44,8 @@ public class SecurityConfig {
     @org.springframework.core.annotation.Order(2)
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
+            AccountSessionStore accounts,
+            ObjectMapper json,
             @Value("${auth.login.max-attempts:10}") int maxAttempts,
             @Value("${auth.login.max-peers:10000}") int maxPeers,
             @Value("${auth.login.window:PT1M}") Duration window,
@@ -85,6 +90,10 @@ public class SecurityConfig {
                                                 "/actuator/health/liveness",
                                                 "/actuator/health/readiness")
                                         .permitAll()
+                                        .requestMatchers(HttpMethod.GET, "/api/auth/me")
+                                        .hasAnyRole("ADMIN", "USER")
+                                        .requestMatchers(HttpMethod.POST, "/api/auth/logout")
+                                        .hasAnyRole("ADMIN", "USER")
                                         .requestMatchers(
                                                 HttpMethod.GET,
                                                 "/api/transports/**",
@@ -113,7 +122,9 @@ public class SecurityConfig {
                         new LoginRateLimitFilter(maxAttempts, maxPeers, window, Clock.systemUTC()),
                         BearerTokenAuthenticationFilter.class)
                 .addFilterAfter(
-                        new AuthenticatedActorFilter(), BearerTokenAuthenticationFilter.class);
+                        new LiveAccountFilter(accounts, authenticationEntryPoint, json),
+                        BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(new AuthenticatedActorFilter(), LiveAccountFilter.class);
         http.addFilterBefore(
                 new LoginRateLimitFilter(
                         registrationAttempts,

@@ -32,7 +32,11 @@ public class AuthController {
                         .map(GrantedAuthority::getAuthority)
                         .toList();
         var token =
-                jwtService.generateToken(principal.getAccountId(), principal.getUsername(), roles);
+                jwtService.generateToken(
+                        principal.getAccountId(),
+                        principal.getUsername(),
+                        roles,
+                        principal.getAuthVersion());
         return new LoginResponse(token, "Bearer", jwtService.expiresIn());
     }
 }

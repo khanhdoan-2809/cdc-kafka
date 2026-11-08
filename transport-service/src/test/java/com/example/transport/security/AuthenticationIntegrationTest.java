@@ -263,6 +263,7 @@ class AuthenticationIntegrationTest {
     String signed(String issuer, String audience, Instant expiry, JwsAlgorithm algorithm) {
         var claims =
                 JwtClaimsSet.builder()
+                        .claim("auth_version", user.getAuthVersion())
                         .subject(user.getId().toString())
                         .issuer(issuer)
                         .audience(List.of(audience))
@@ -277,7 +278,12 @@ class AuthenticationIntegrationTest {
     @Test
     void missingExpiredTamperedWrongIssuerAudienceAndAlgorithmReturn401() throws Exception {
         mvc.perform(get("/api/jobs/123")).andExpect(status().isUnauthorized());
-        var valid = tokens.generateToken(user.getId().toString(), "user", List.of("ROLE_USER"));
+        var valid =
+                tokens.generateToken(
+                        user.getId().toString(),
+                        "user",
+                        List.of("ROLE_USER"),
+                        user.getAuthVersion());
         var parts = valid.split("\\.");
         byte[] signature = Base64.getUrlDecoder().decode(parts[2]);
         signature[0] ^= 1;
@@ -322,6 +328,7 @@ class AuthenticationIntegrationTest {
         for (boolean missingExpiry : List.of(true, false)) {
             var builder =
                     JwtClaimsSet.builder()
+                            .claim("auth_version", user.getAuthVersion())
                             .issuer("https://auth.test")
                             .audience(List.of("transport-test"))
                             .subject(missingExpiry ? user.getId().toString() : "not-a-user-id")

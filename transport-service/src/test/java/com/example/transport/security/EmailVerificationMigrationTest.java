@@ -23,7 +23,7 @@ class EmailVerificationMigrationTest {
         var user = UUID.randomUUID();
         jdbc.update(
                 "insert into auth_user(id,username,password_hash,role,enabled) values"
-                    + " (?,'legacy','hash-before-upgrade','USER',true)",
+                        + " (?,'legacy','hash-before-upgrade','USER',true)",
                 user);
         Long transport =
                 jdbc.queryForObject(
@@ -34,7 +34,11 @@ class EmailVerificationMigrationTest {
                         Long.class);
         jdbc.update("insert into transport_assignment values (?,?)", transport, user);
         var flyway =
-                Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
+                Flyway.configure()
+                        .dataSource(source)
+                        .locations("classpath:db/migration")
+                        .target("6")
+                        .load();
         flyway.migrate();
         flyway.validate();
         assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("6");
@@ -50,7 +54,7 @@ class EmailVerificationMigrationTest {
                         () ->
                                 jdbc.update(
                                         "update auth_user set email='UPPER@test.invalid' where"
-                                            + " id=?",
+                                                + " id=?",
                                         user))
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(
@@ -78,7 +82,7 @@ class EmailVerificationMigrationTest {
                         () ->
                                 jdbc.update(
                                         "insert into email_verification_token values"
-                                            + " (?,?,now(),now()+interval '24 hours')",
+                                                + " (?,?,now(),now()+interval '24 hours')",
                                         user,
                                         "b".repeat(64)))
                 .isInstanceOf(DataIntegrityViolationException.class);
@@ -90,7 +94,7 @@ class EmailVerificationMigrationTest {
         assertThat(
                         jdbc.queryForList(
                                 "select tablename from pg_publication_tables where"
-                                    + " pubname='transport_cdc_publication'",
+                                        + " pubname='transport_cdc_publication'",
                                 String.class))
                 .containsExactlyInAnyOrder("transport", "job", "container");
         assertThat(

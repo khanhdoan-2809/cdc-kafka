@@ -40,7 +40,7 @@ Login now requires a verified email, including for existing accounts and the boo
 | `AUTH_LOGIN_WINDOW` | ISO-8601 window duration; default `PT1M` |
 | `AUTH_LOGIN_MAX_PEERS` | Maximum tracked IPs; default 10000; capacity exhaustion fails closed |
 
-Startup fails for absent, malformed, mismatched or weak RSA keys. Only RS256 bearer tokens are accepted, with mandatory expiry, issued-at, UUID subject, issuer and audience checks. Spring Security applies its default timestamp clock-skew tolerance (60 seconds). Tokens expire independently of account state: disabling an account prevents new logins, while previously issued tokens remain usable until expiration. There are no refresh tokens or logout revocation; log in again after expiry.
+Startup fails for absent, malformed, mismatched or weak RSA keys. Only RS256 bearer tokens are accepted, with mandatory expiry, issued-at, UUID subject, issuer and audience checks. Spring Security applies its default timestamp clock-skew tolerance (60 seconds). Every bearer request now checks the account’s current authentication version, role, enabled status and verified email in PostgreSQL. Logout invalidates all sessions; database failures deny access with 503. There are no refresh tokens; log in again after expiry or invalidation. See [sessions and logout rollout](docs/sessions.md).
 
 Login throttling is bounded, in-memory and per process, keyed by the actual peer IP. It counts successful and failed attempts, returns 429 with Retry-After, and does not trust client-supplied forwarded headers. Behind a proxy, peers may share a limit; apply per-client throttling at a trusted ingress. Multiple replicas need a shared limiter or ingress enforcement. Restarting a process resets its counters.
 

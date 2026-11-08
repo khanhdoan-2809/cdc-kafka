@@ -8,10 +8,14 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-@RestControllerAdvice(assignableTypes = AuthController.class)
+@RestControllerAdvice(assignableTypes = {AuthController.class, SessionController.class})
 public class AuthExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<?> credentials(AuthenticationException exception) {
+        if (exception
+                instanceof
+                org.springframework.security.authentication.AuthenticationServiceException)
+            return unavailable();
         return ResponseEntity.status(401)
                 .body(
                         Map.of(
@@ -37,5 +41,25 @@ public class AuthExceptionHandler {
                                 "Bad Request",
                                 "message",
                                 "Invalid login request"));
+    }
+
+    @ExceptionHandler({
+        org.springframework.dao.DataAccessException.class,
+        org.springframework.transaction.TransactionException.class
+    })
+    public ResponseEntity<?> database(RuntimeException exception) {
+        return unavailable();
+    }
+
+    private ResponseEntity<?> unavailable() {
+        return ResponseEntity.status(503)
+                .body(
+                        Map.of(
+                                "status",
+                                503,
+                                "error",
+                                "Service Unavailable",
+                                "message",
+                                "Authentication service unavailable"));
     }
 }

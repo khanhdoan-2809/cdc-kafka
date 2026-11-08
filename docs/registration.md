@@ -42,7 +42,7 @@ Flyway V6 adds nullable unique email, email_verified=false, and email_verificati
 4. Request resend-verification, have the recipient verify the emailed code, and confirm login plus assigned-record access. Verify at least the bootstrap/admin account before relying on admin operations.
 5. Remove bootstrap credentials from runtime configuration after setup. Do not expose signup publicly until the remaining roadmap tasks are complete.
 
-Previously issued JWTs still expire normally; immediate invalidation is task 3. If the cutover must reject them immediately, use the existing controlled signing-key rotation procedure. SMTP failure does not mark anyone verified. Account and token tables remain outside the business CDC publication and Debezium allowlist.
+Task 3A now requires auth_version and checks current account state on every bearer request. Tokens issued before task 3A are rejected and require re-login; see the coordinated rollout in docs/sessions.md. SMTP failure does not mark anyone verified. Account and token tables remain outside the business CDC publication and Debezium allowlist.
 
 ## Production configuration
 

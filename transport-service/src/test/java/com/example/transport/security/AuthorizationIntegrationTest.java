@@ -131,7 +131,10 @@ class AuthorizationIntegrationTest {
 
     String token(Account user) {
         return tokens.generateToken(
-                user.getId().toString(), user.getUsername(), List.of("ROLE_" + user.getRole()));
+                user.getId().toString(),
+                user.getUsername(),
+                List.of("ROLE_" + user.getRole()),
+                user.getAuthVersion());
     }
 
     void grant(long transport, Account user) {
@@ -440,8 +443,10 @@ class AuthorizationIntegrationTest {
             mvc.perform(get(path)).andExpect(status().isUnauthorized());
             getAs(path, "invalid").andExpect(status().isUnauthorized());
         }
-        String roleless = tokens.generateToken(alice.getId().toString(), "alice", List.of());
-        getAs("/api/jobs/11", roleless).andExpect(status().isForbidden());
+        String roleless =
+                tokens.generateToken(
+                        alice.getId().toString(), "alice", List.of(), alice.getAuthVersion());
+        getAs("/api/jobs/11", roleless).andExpect(status().isUnauthorized());
         mvc.perform(
                         post("/api/transports")
                                 .contentType("application/json")

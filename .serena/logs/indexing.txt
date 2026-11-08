@@ -1,0 +1,4 @@
+infrastructure\terraform\prod\production.auto.tfvars
+Error processing request textDocument/documentSymbol with params:
+{'textDocument': {'uri': 'file:///D:/Projects/transport/infrastructure/terraform/prod/production.auto.tfvars'}}
+(caused by production.auto.tfvars: file not found (-32098))

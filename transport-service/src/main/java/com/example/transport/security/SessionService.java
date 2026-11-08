@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SessionService {
     private final AccountRepository accounts;
+    private final RedisSessionStore sessions;
 
     @org.springframework.security.access.prepost.PreAuthorize(
             "hasAnyRole('ADMIN','USER') and #authenticated.id().toString() == authentication.name")
@@ -21,9 +22,9 @@ public class SessionService {
         // Recheck after taking the lock: another logout/status update may have won the race.
         if (!account.isEnabled()
                 || !account.isEmailVerified()
-                || account.getAuthVersion() != authenticated.authVersion()
                 || !account.getRole().equals(authenticated.role()))
             throw new BadCredentialsException("Invalid authentication");
-        account.invalidateSessions();
+        if (!sessions.revokeAllIfActive(authenticated))
+            throw new BadCredentialsException("Invalid authentication");
     }
 }

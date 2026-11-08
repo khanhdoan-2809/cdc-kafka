@@ -23,4 +23,8 @@ if [[ ! -f secrets/auth.env ]]; then
   printf '%s' "$monitoring_password" > secrets/monitoring-password
 fi
 [[ -s secrets/monitoring-password ]] || { echo 'Missing monitoring password file' >&2; exit 1; }
+if [[ ! -s secrets/redis-password ]]; then
+  openssl rand -hex 32 > secrets/redis-password
+fi
+chmod 600 secrets/redis-password
 echo 'DEV authentication files are ready under secrets/. Credentials are not printed.'

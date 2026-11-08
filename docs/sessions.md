@@ -1,36 +1,87 @@
-# Session invalidation and logout (task 3A)
+# Redis sessions and account-wide logout
 
-Access tokens still expire after 15 minutes by default. There are no refresh tokens, server-side session rows or token blacklist. This task adds durable account-wide invalidation and a current-account endpoint; password recovery/change remain PR 3B.
+RS256 access tokens expire after 15 minutes by default. PostgreSQL stores accounts and password hashes; Redis is the authoritative allowlist of active login sessions. There are no refresh tokens. Login again after expiry, logout, or session-store loss.
 
-## API
+## HTTP contract
 
 | Endpoint | Authentication | Result |
 | --- | --- | --- |
-| GET /api/auth/me | Current valid USER or ADMIN bearer token | 200 with id, username, email, role only |
-| POST /api/auth/logout | Current valid USER or ADMIN bearer token | 204 after invalidating every token for the caller |
+| POST /api/auth/login | Username and password | accessToken, tokenType, expiresIn |
+| GET /api/auth/me | Active USER or ADMIN bearer session | id, username, email, role only |
+| POST /api/auth/logout | Active USER or ADMIN bearer session | 204 after revoking every session for that account |
 
-No body is required for logout. Request body IDs and X-User-Id cannot select another account. USER needs no transport assignment to inspect their own profile or log out. A revoked token, including a second logout using that token, returns 401. Login response fields remain accessToken, tokenType and expiresIn; the JWT now contains a required integer auth_version.
+Logout has no required body. Body IDs and X-User-Id cannot select another account. A revoked token, including a repeated logout, returns 401. Existing response shapes, transport assignment checks, Basic monitoring credentials, and audit actor attribution are preserved.
 
-## Validation and concurrency
+JWTs require canonical UUID sub and jti claims, issuer, audience, issued-at and expiry, and an RS256 signature. They no longer contain auth_version. Session metadata binds account ID, username, email, role, jti and exact expiry. Tokens are signed with whole-second timestamps so the encoded JWT and stored metadata agree. Passwords and raw bearer tokens never enter Redis.
 
-Every bearer-authenticated request first validates the RSA signature, issuer, audience, timestamps, UUID subject and nonnegative integer auth_version. It then performs one fresh primary-key PostgreSQL query for current account state, excluding password hashes. A missing account, disabled/unverified email, changed role, mismatched version, malformed/missing version claim or expired token returns generic 401. The check happens before audit-identity population and business code. Invalid cryptographic/required claims do not query account state. Unknown/non-JWT authentication cannot bypass the bearer chain.
+## Request validation and storage
 
-Live state is request-local and is not cached across requests. /me uses that validated state and never serializes the password hash, version or internal status flags. Health requests without a bearer token and the separate Basic monitoring chain keep their existing behavior.
+After cryptographic and required-claim validation, RedisSessionStore performs one script execution to validate the session and obtain its public account snapshot. No account SQL lookup runs on normal bearer validation or /me. A cold Redis script cache may require the driver's EVALSHA-to-EVAL fallback; warmed validation is one Redis round trip. Business requests still query PostgreSQL for business data and transport assignments.
 
-The account version is captured in AccountPrincipal during credential authentication and passed unchanged to JWT signing. A concurrent logout cannot be bypassed by rereading a newer version after old credentials were checked. Logout locks the account, rechecks current status/role/version, increments auth_version and commits before returning 204. Concurrent logouts serialize; a loser with a stale snapshot returns 401. Other accounts are unaffected. New login after logout produces a usable token at the current version.
+Each account uses two keys sharing the same Redis hash tag:
 
-Checks apply when a request enters; work already in flight is not canceled. A database failure at lookup or during logout returns 503, exposes no connection details and never falls back to JWT-only authorization. A failed logout must not be treated as confirmed account-wide revocation; retry after recovery. Locally discarding a token alone does not revoke other sessions.
+- auth:sessions:{account-uuid}:data: hash of jti to JSON metadata.
+- auth:sessions:{account-uuid}:expiry: sorted set of jti to expiry milliseconds.
 
-## Account changes and rollout
+Lua atomically creates sessions, removes expired entries during creation, and expires both keys at the latest session's expiry plus Spring Security's existing 60-second timestamp tolerance. Validation requires the corresponding index entry and matching expiry, and never renews TTL. Missing, expired, corrupt, or mismatched sessions return 401. Redis communication, authentication, timeout, or capacity failures return generic 503, without database or JWT-only fallback.
 
-Flyway V7 adds auth_user.auth_version BIGINT NOT NULL DEFAULT 0 with a nonnegative constraint. It changes no account IDs, passwords, roles, email-verification state or assignments, and does not publish credentials to business CDC. The entity increments its version when enabled status changes or email verification is activated. Future password/role/admin operations must lock the same account row and increment this counter within their transaction. Controlled raw SQL changes to security fields must also increment auth_version; never reset or decrement the counter. A changed role/disabled/unverified account is independently checked even if an operator omits a version bump.
+## Concurrency and controlled account changes
 
-Tokens issued before this release lack auth_version and are rejected immediately by the new application; everyone must log in again. Clients should discard stale local tokens and omit Authorization when logging in again. Apply V7 with the application release and drain all old instances before restoring authenticated traffic. Do not serve a mixture of old nodes that ignore versions and new nodes that enforce them. No signing-key rotation is required for the versioned-token cutover. Keep public registration disabled until remaining roadmap tasks are ready.
+Login locks the PostgreSQL account row by username BEFORE validating credentials, and holds that lock through Redis session creation. Logout locks the same row by ID and atomically verifies its caller's session before deleting both Redis keys. Concurrent logouts have one winner; a stale logout cannot revoke a subsequent login. A login already checking credentials completes before a waiting logout, and that logout revokes its newly issued session too. Sessions are returned only after Redis creation and successful transaction completion. Requests already in flight are not canceled.
 
-If rolling back, put authenticated/business traffic into maintenance first: the previous application does not enforce revocation. The additive column can remain, but serving the old application would weaken session invalidation. Do not decrease stored versions to revive old tokens.
+AccountSecurityService uses the same row lock and performs Redis revocation before changing PostgreSQL state. Redis failure aborts the database change. Database failure after revocation can sign the account out, but cannot restore revoked sessions. A timeout or error must not be treated as confirmed success; retry after recovery.
+
+Use the operator-only CLI for existing accounts. It runs a separate non-web JVM inside the deployed container, using its configured DB/Redis credentials. It exposes no administration HTTP routes:
+
+```bash
+bash scripts/account-admin.sh revoke <account-uuid>
+bash scripts/account-admin.sh set-role <account-uuid> ADMIN
+bash scripts/account-admin.sh set-enabled <account-uuid> false
+bash scripts/account-admin.sh delete <account-uuid>
+```
+
+For production, prefix commands with COMPOSE_FILE=compose.prod.yml COMPOSE_ENV_FILE=.env.prod. For DEV's explicit env file use COMPOSE_ENV_FILE=.env.dev (and the appropriate COMPOSE_FILE override if needed). Commands return nonzero on failure and do not print passwords or tokens.
+
+Direct SQL changes no longer update active session snapshots or revoke tokens immediately. Role changes, disable/enable and deletion must use the coordinated service/CLI. Do not combine a CLI revoke followed by arbitrary SQL while traffic is live: a login could interleave. Unsupported password/email/security edits require maintenance with application instances stopped, database edits completed, and Redis sessions cleared before traffic resumes. Future password/email management must acquire the account lock and revoke Redis sessions before committing. Email verification of a pending account remains in PostgreSQL; pending accounts cannot have login sessions.
+
+## Redis configuration and recovery
+
+Local/DEV and production Compose run a private redis:7.4.12-alpine container without a host port. It requires authentication, runs as the redis user, has a 256 MiB container limit, a 128 MiB data limit, and noeviction. Snapshotting, append-only persistence and replication are disabled. Existing session data is never reconstructed from PostgreSQL or bearer tokens.
+
+Run bash scripts/init-dev-auth.sh for local/DEV. It creates secrets/redis-password if absent and preserves it on later runs. Production requires a separately provisioned /etc/cdc-kafka/redis-password, readable by the deployment identity and protected on the host. The deploy script checks that this file exists. REDIS_PASSWORD_FILE overrides the Compose source path. Both application and Redis mount the same password file as /run/secrets/redis-password; Spring reads it through configtree. Avoid conflicting REDIS_PASSWORD environment overrides.
+
+Standalone application runs accept REDIS_HOST, REDIS_PORT and REDIS_PASSWORD. REDIS_CONNECT_TIMEOUT and REDIS_COMMAND_TIMEOUT default to one second. Redis and database health contribute to readiness; liveness only reflects application availability. Health endpoints remain public and do not expose secret details.
+
+A Redis restart clears every login session, so all users must log in again. An application restart retains sessions while Redis stays running. Never restore old session snapshots or attach a replica: stale allowlist data could restore revoked sessions. This initial deployment accepts Redis downtime as authentication downtime. Multiple application instances must share this Redis instance and the primary PostgreSQL database.
+
+Metrics auth.sessions.duration and auth.sessions.failures record store latency and operational failures with operation/outcome tags only, without token or account labels. Prometheus renders these as auth_sessions_duration_seconds_* and auth_sessions_failures_total. Watch readiness, failure rate, and capacity; normal token rejection is not counted as an infrastructure failure.
+
+## Cutover and rollback
+
+Pause authenticated/business traffic and drain all old instances before enabling this release. Provision the Redis password, start Redis, deploy the new application, and verify readiness and the session smoke test before resuming traffic. All existing tokens require login again because no corresponding Redis session exists. Never mix nodes using database versions with nodes using Redis sessions.
+
+Flyway V7 and the auth_user.auth_version column remain unchanged for schema-history compatibility. Runtime code no longer maps, reads, or increments that column. Do not edit old migration checksums or remove the column during this release. Credentials and session metadata remain outside business CDC.
+
+Rollback also requires maintenance and drained instances. Clear Redis sessions, invalidate any tokens the target application might otherwise accept (rotate signing keys when returning to the old database-version application), and require fresh login before resuming traffic. Merely reverting the application does not provide a safe session migration.
 
 ## Verification
 
-`./mvnw -B clean verify` covers existing auth/authorization/registration tests plus PostgreSQL V6–V7 migration, current-account response isolation, all-session logout, re-login, role/status changes, malformed/missing/stale versions, database/transaction failures and concurrent login/logout. A latch-based test pauses after credential validation and logs out before allowing token issuance; that raced token must be rejected.
+Install Java 21 and a real redis-server on PATH, or set REDIS_TEST_EXECUTABLE to its absolute path. Tests launch isolated password-protected Redis instances on random loopback ports with persistence disabled; they never connect to a developer's shared Redis. Native PostgreSQL 17 is supplied by the existing embedded-postgres test dependency. Docker is not required for Maven tests. Linux CI installs Redis before running ./mvnw -B clean verify.
 
-An additional native PostgreSQL + loopback sandbox SMTP smoke test runs register -> receive the real SMTP message -> verify -> login -> /me -> logout -> rejected old token. It uses the production mail adapter, not the integration mailbox fake, and sends no mail outside the test server. This does not replace a check against deployed DEV Mailpit/SMTP, production TLS delivery, Docker image builds or the full Kafka/Debezium smoke flow. Run the deployed DEV email smoke before deployment; Docker may be required there, not for the automated native tests.
+Coverage includes logout across devices, account isolation, concurrent login/logout and simultaneous logouts, controlled changes and transaction failures, missing/malformed JWT claims, corrupt/mismatched/expired Redis state, cleanup and timestamp tolerance, real connection failures, real Redis restart, full application restart, and the operator configuration. /me checks assert one store validation and zero JDBC/repository interactions or Hibernate SQL statements.
+
+An optional warmed lookup comparison against the previous primary-key account query writes target/auth-session-benchmark.json (p50/p95 microseconds and account SQL counts):
+
+```bash
+RUN_AUTH_BENCHMARK=true ./mvnw -B -pl transport-service -Dtest=SessionLifecycleIntegrationTest test
+```
+
+This local lookup comparison excludes HTTP and signature verification and does not establish production throughput. Run the existing load suite against comparable deployments to assess production latency and database load.
+
+On a deployed isolated stack, provide a dedicated verified test account and run:
+
+```bash
+SMOKE_USERNAME=session-test SMOKE_PASSWORD='<test-password>' bash scripts/smoke-redis-sessions.sh
+```
+
+Set SMOKE_RESTART_SERVICES=true only on an isolated smoke stack to also restart the application (token survives) and Redis (token fails). This signs everyone out of that stack. COMPOSE_FILE and COMPOSE_ENV_FILE select the same deployment as for the operator CLI; SMOKE_BASE_URL overrides the default loopback API URL. The script revokes the test account's sessions and never prints its tokens.

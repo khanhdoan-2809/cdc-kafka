@@ -85,8 +85,8 @@ public class JwtKeyConfig {
         OAuth2TokenValidator<Jwt> requiredClaims =
                 jwt -> {
                     try {
-                        java.util.UUID.fromString(jwt.getSubject());
-                        if (JwtAuthVersion.read(jwt.getClaim("auth_version")).isPresent()
+                        if (jwt.getSubject().equals(java.util.UUID.fromString(jwt.getSubject()).toString())
+                                && jwt.getId().equals(java.util.UUID.fromString(jwt.getId()).toString())
                                 && jwt.getExpiresAt() != null
                                 && jwt.getIssuedAt() != null
                                 && jwt.getAudience().contains(audience))

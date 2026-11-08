@@ -23,6 +23,27 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    secrets:
+      - redis-password
+    # No snapshots, append-only log, replicas, or host port. Restart invalidates all sessions.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        password="$$(cat /run/secrets/redis-password)"
+        test -n "$$password"
+        # Read the host-protected secret as root, then let the official entrypoint drop privileges.
+        exec /usr/local/bin/docker-entrypoint.sh redis-server --bind 0.0.0.0 --requirepass "$$password" --save "" --appendonly no --maxmemory 128mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$(cat /run/secrets/redis-password)" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   transport-postgres:
     image: postgres:17
     container_name: transport-postgres
@@ -276,7 +297,10 @@ services:
       - ./secrets/auth.env
     volumes:
       - ./secrets/jwt:/run/secrets/jwt:ro
+    secrets:
+      - redis-password
     environment:
+      REDIS_HOST: redis
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       SMTP_AUTH: "false"
@@ -294,6 +318,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
+      redis:
+        condition: service_healthy
       transport-postgres:
         condition: service_healthy
     healthcheck:
@@ -403,3 +429,6 @@ volumes:
   kafka-data:
   prometheus-data:
   grafana-data:
+secrets:
+  redis-password:
+    file: ${REDIS_PASSWORD_FILE:-./secrets/redis-password}

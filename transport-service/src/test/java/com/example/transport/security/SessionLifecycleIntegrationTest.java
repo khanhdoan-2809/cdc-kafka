@@ -55,16 +55,15 @@ class SessionLifecycleIntegrationTest {
     }
 
     @Autowired MockMvc mvc;
-    @Autowired JdbcTemplate jdbc;
-    @Autowired AccountRepository accounts;
+    @MockitoSpyBean JdbcTemplate jdbc;
+    @MockitoSpyBean AccountRepository accounts;
     @Autowired ObjectMapper json;
     @Autowired JwtDecoder decoder;
     @Autowired JwtEncoder encoder;
-
-    @MockitoSpyBean
-    org.springframework.security.authentication.AuthenticationManager authenticationManager;
-
-    @MockitoSpyBean AccountSessionStore store;
+    @Autowired AccountSecurityService security;
+    @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
+    @MockitoSpyBean org.springframework.security.authentication.AuthenticationManager authenticationManager;
+    @MockitoSpyBean RedisSessionStore store;
     @MockitoSpyBean PlatformTransactionManager transactions;
     Account alice, bob, admin;
     static final String PASSWORD = "session-test-password";
@@ -85,20 +84,9 @@ class SessionLifecycleIntegrationTest {
     }
 
     String login(Account account) throws Exception {
-        var result =
-                mvc.perform(
-                                post("/api/auth/login")
-                                        .contentType("application/json")
-                                        .content(
-                                                json.writeValueAsString(
-                                                        Map.of(
-                                                                "username",
-                                                                account.getUsername(),
-                                                                "password",
-                                                                PASSWORD))))
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("expiresIn").value(900))
-                        .andReturn();
+        var result = mvc.perform(post("/api/auth/login").contentType("application/json")
+                .content(json.writeValueAsString(Map.of("username", account.getUsername(), "password", PASSWORD))))
+                .andExpect(status().isOk()).andExpect(jsonPath("expiresIn").value(900)).andReturn();
         return json.readTree(result.getResponse().getContentAsString()).get("accessToken").asText();
     }
 
@@ -111,239 +99,218 @@ class SessionLifecycleIntegrationTest {
     }
 
     @Test
-    void meExposesOnlyCurrentPublicAccountFieldsAndRequiresAuthentication() throws Exception {
+    void meExposesOnlyPublicFieldsAndPerformsNoAccountSql() throws Exception {
         String token = login(alice);
-        var result =
-                me(token)
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("id").value(alice.getId().toString()))
-                        .andExpect(jsonPath("username").value("alice"))
-                        .andExpect(jsonPath("email").value("alice@test.invalid"))
-                        .andExpect(jsonPath("role").value("USER"))
-                        .andReturn();
+        var jwt = decoder.decode(token);
+        assertThat(UUID.fromString(jwt.getId())).isNotNull();
+        assertThat(jwt.getClaims()).doesNotContainKey("auth_version");
+        clearInvocations(accounts, jdbc, store);
+        var statistics = entityManagerFactory.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        var result = me(token).andExpect(status().isOk())
+                .andExpect(jsonPath("id").value(alice.getId().toString()))
+                .andExpect(jsonPath("username").value("alice"))
+                .andExpect(jsonPath("email").value("alice@test.invalid"))
+                .andExpect(jsonPath("role").value("USER")).andReturn();
         assertThat(json.readTree(result.getResponse().getContentAsString()).size()).isEqualTo(4);
-        assertThat(
-                        JwtAuthVersion.read(decoder.decode(token).getClaim("auth_version"))
-                                .orElseThrow())
-                .isEqualTo(alice.getAuthVersion());
-        jdbc.update("update auth_user set username='renamed' where id=?", alice.getId());
-        me(token).andExpect(status().isOk()).andExpect(jsonPath("username").value("renamed"));
+        verifyNoInteractions(accounts, jdbc);
+        verify(store, times(1)).validate(any(Jwt.class));
+        assertThat(statistics.getPrepareStatementCount()).isZero();
         mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/auth/logout")).andExpect(status().isUnauthorized());
-        me("invalid").andExpect(status().isUnauthorized());
-        me(login(admin)).andExpect(status().isOk()).andExpect(jsonPath("role").value("ADMIN"));
     }
 
     @Test
-    void logoutInvalidatesAllOwnTokensButNotOtherUsersAndReloginSucceeds() throws Exception {
+    void logoutInvalidatesEveryOwnSessionAndCannotTargetAnotherAccount() throws Exception {
         String one = login(alice), two = login(alice), other = login(bob);
         assertThat(one).isNotEqualTo(two);
-        logout(one).andExpect(status().isNoContent()).andExpect(content().string(""));
+        mvc.perform(post("/api/auth/logout").header("Authorization", "Bearer " + one)
+                .header("X-User-Id", bob.getId()).contentType("application/json")
+                .content(json.writeValueAsString(Map.of("id", bob.getId()))))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
         me(one).andExpect(status().isUnauthorized());
         me(two).andExpect(status().isUnauthorized());
         logout(two).andExpect(status().isUnauthorized());
         me(other).andExpect(status().isOk());
-        long current = accounts.findById(alice.getId()).orElseThrow().getAuthVersion();
-        assertThat(current).isEqualTo(alice.getAuthVersion() + 1);
-        String fresh = login(alice);
-        assertThat(
-                        JwtAuthVersion.read(decoder.decode(fresh).getClaim("auth_version"))
-                                .orElseThrow())
-                .isEqualTo(current);
-        me(fresh).andExpect(status().isOk());
-    }
-
-    @Test
-    void logoutCannotTargetAnotherAccountThroughItsBodyOrActorHeader() throws Exception {
-        String aliceToken = login(alice), bobToken = login(bob);
-        mvc.perform(
-                        post("/api/auth/logout")
-                                .header("Authorization", "Bearer " + aliceToken)
-                                .header("X-User-Id", bob.getId())
-                                .contentType("application/json")
-                                .content(
-                                        json.writeValueAsString(
-                                                Map.of("id", bob.getId(), "auth_version", 999))))
-                .andExpect(status().isNoContent());
-        me(aliceToken).andExpect(status().isUnauthorized());
-        me(bobToken).andExpect(status().isOk());
-        assertThat(accounts.findById(bob.getId()).orElseThrow().getAuthVersion())
-                .isEqualTo(bob.getAuthVersion());
-    }
-
-    @Test
-    void disabledOrUnverifiedOrDeletedAccountCannotUseAnExistingToken() throws Exception {
-        String disabled = login(alice), unverified = login(bob), deleted = login(admin);
-        alice.setEnabled(false);
-        accounts.saveAndFlush(alice);
-        jdbc.update("update auth_user set email_verified=false where id=?", bob.getId());
-        jdbc.update("delete from auth_user where id=?", admin.getId());
-        for (String token : List.of(disabled, unverified, deleted)) {
-            me(token).andExpect(status().isUnauthorized());
-            logout(token).andExpect(status().isUnauthorized());
-        }
-        alice.setEnabled(true);
-        accounts.saveAndFlush(alice);
-        me(disabled).andExpect(status().isUnauthorized());
         me(login(alice)).andExpect(status().isOk());
     }
 
     @Test
-    void roleChangesAreReadFromDatabaseEvenWithoutAnExplicitVersionBump() throws Exception {
+    void controlledDisableRoleChangeAndDeletionRevokeSessions() throws Exception {
+        String disabled = login(alice), changed = login(bob), deleted = login(admin);
+        security.apply(alice.getId(), "set-enabled", "false");
+        security.apply(bob.getId(), "set-role", "ADMIN");
+        security.apply(admin.getId(), "delete", "");
+        for (String token : List.of(disabled, changed, deleted)) {
+            me(token).andExpect(status().isUnauthorized());
+            logout(token).andExpect(status().isUnauthorized());
+        }
+        security.apply(alice.getId(), "set-enabled", "true");
+        me(disabled).andExpect(status().isUnauthorized());
+        me(login(alice)).andExpect(status().isOk());
+        me(login(bob)).andExpect(status().isOk()).andExpect(jsonPath("role").value("ADMIN"));
+    }
+
+    @Test
+    void rawSqlDoesNotUpdateSessionSnapshotButControlledRevocationDoes() throws Exception {
         String token = login(alice);
         jdbc.update("update auth_user set role='ADMIN' where id=?", alice.getId());
+        me(token).andExpect(status().isOk()).andExpect(jsonPath("role").value("USER"));
+        security.apply(alice.getId(), "revoke", "");
         me(token).andExpect(status().isUnauthorized());
-        mvc.perform(
-                        post("/api/transports")
-                                .header("Authorization", "Bearer " + token)
-                                .contentType("application/json")
-                                .content("{\"reference\":\"DENIED\"}"))
-                .andExpect(status().isUnauthorized());
-        assertThat(jdbc.queryForObject("select count(*) from transport", Long.class)).isZero();
-        me(login(alice)).andExpect(status().isOk()).andExpect(jsonPath("role").value("ADMIN"));
     }
 
-    String signed(Object version, boolean includeVersion, List<String> roles) {
-        var claims =
-                JwtClaimsSet.builder()
-                        .subject(alice.getId().toString())
-                        .issuer("https://auth.test")
-                        .audience(List.of("transport-test"))
-                        .issuedAt(Instant.now())
-                        .expiresAt(Instant.now().plusSeconds(600))
-                        .claim("roles", roles);
-        if (includeVersion) claims.claim("auth_version", version);
-        return encoder.encode(
-                        JwtEncoderParameters.from(
-                                JwsHeader.with(SignatureAlgorithm.RS256).build(), claims.build()))
-                .getTokenValue();
+    String signed(String jti, List<String> roles) {
+        var claims = JwtClaimsSet.builder().subject(alice.getId().toString())
+                .issuer("https://auth.test").audience(List.of("transport-test"))
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(600))
+                .claim("username", "alice").claim("roles", roles);
+        if (jti != null) claims.id(jti);
+        return encoder.encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.RS256).build(), claims.build())).getTokenValue();
     }
 
     @Test
-    void oldAndMalformedVersionClaimsFailBeforeAccountLookup() throws Exception {
+    void missingMalformedAndLegacySessionClaimsFailBeforeRedis() throws Exception {
         clearInvocations(store);
-        me(signed(null, false, List.of("ROLE_USER"))).andExpect(status().isUnauthorized());
-        for (Object version :
-                List.of(-1L, 1.0, "1", true, new java.math.BigInteger("9223372036854775808")))
-            me(signed(version, true, List.of("ROLE_USER"))).andExpect(status().isUnauthorized());
+        me(signed(null, List.of("ROLE_USER"))).andExpect(status().isUnauthorized());
+        for (String id : List.of("bad", "1-1-1-1-1", ""))
+            me(signed(id, List.of("ROLE_USER"))).andExpect(status().isUnauthorized());
+        me("invalid").andExpect(status().isUnauthorized());
         verifyNoInteractions(store);
-        me(signed(alice.getAuthVersion() + 1, true, List.of("ROLE_USER")))
+        me(signed(UUID.randomUUID().toString(), List.of("ROLE_USER")))
                 .andExpect(status().isUnauthorized());
-        me(signed(alice.getAuthVersion(), true, List.of("ROLE_ADMIN")))
-                .andExpect(status().isUnauthorized());
-        me(signed(alice.getAuthVersion(), true, List.of())).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void accountDatabaseFailureReturns503WithoutExecutingBusinessWrites() throws Exception {
+    void redisFailureReturns503WithoutBusinessWritesOrFallback() throws Exception {
         String token = login(admin);
-        doThrow(new DataAccessResourceFailureException("test database detail must not leak"))
-                .when(store)
-                .findById(admin.getId());
-        me(token)
-                .andExpect(status().isServiceUnavailable())
+        doThrow(new DataAccessResourceFailureException("private Redis connection detail"))
+                .when(store).validate(any(Jwt.class));
+        me(token).andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("message").value("Authentication service unavailable"))
                 .andExpect(header().doesNotExist("WWW-Authenticate"));
-        mvc.perform(
-                        post("/api/transports")
-                                .header("Authorization", "Bearer " + token)
-                                .contentType("application/json")
-                                .content("{\"reference\":\"DENIED\"}"))
+        mvc.perform(post("/api/transports").header("Authorization", "Bearer " + token)
+                .contentType("application/json").content("{\"reference\":\"DENIED\"}"))
                 .andExpect(status().isServiceUnavailable());
         logout(token).andExpect(status().isServiceUnavailable());
         assertThat(jdbc.queryForObject("select count(*) from transport", Long.class)).isZero();
-        assertThat(accounts.findById(admin.getId()).orElseThrow().getAuthVersion())
-                .isEqualTo(admin.getAuthVersion());
-        doCallRealMethod().when(store).findById(admin.getId());
-        me(token).andExpect(status().isOk());
     }
 
     @Test
-    void transactionFailureAfterLiveCheckReturns503AndDoesNotReportSuccessfulLogout()
-            throws Exception {
+    void redisFailureAbortsLoginAndAccountMutation() throws Exception {
+        doThrow(new DataAccessResourceFailureException("private"))
+                .when(store).create(any(AccountSessionState.class));
+        mvc.perform(post("/api/auth/login").contentType("application/json")
+                .content(json.writeValueAsString(Map.of("username", "alice", "password", PASSWORD))))
+                .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("accessToken").doesNotExist());
+        doThrow(new DataAccessResourceFailureException("private"))
+                .when(store).revokeAll(alice.getId());
+        assertThatThrownBy(() -> security.apply(alice.getId(), "set-enabled", "false"))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        assertThat(accounts.findById(alice.getId()).orElseThrow().isEnabled()).isTrue();
+    }
+
+    @Test
+    void databaseFailureAtLogoutReturns503AndDoesNotClaimSuccess() throws Exception {
         String token = login(alice);
-        doThrow(new CannotCreateTransactionException("private connection details"))
-                .when(transactions)
-                .getTransaction(any(TransactionDefinition.class));
-        logout(token)
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("message").value("Authentication service unavailable"));
-        doCallRealMethod().when(transactions).getTransaction(any(TransactionDefinition.class));
+        doThrow(new CannotCreateTransactionException("private database details"))
+                .when(transactions).getTransaction(any(TransactionDefinition.class));
         me(token).andExpect(status().isOk());
-        assertThat(accounts.findById(alice.getId()).orElseThrow().getAuthVersion())
-                .isEqualTo(alice.getAuthVersion());
+        logout(token).andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("message").value("Authentication service unavailable"));
     }
 
     @Test
-    void tokenIssuanceNeverRereadsANewerVersionAfterLogout() throws Exception {
+    void failedDatabaseMutationAfterRevocationCannotRestoreSessions() throws Exception {
+        String token = login(alice);
+        doThrow(new org.springframework.dao.DataIntegrityViolationException("simulated delete failure"))
+                .when(accounts).delete(any(Account.class));
+        assertThatThrownBy(() -> security.apply(alice.getId(), "delete", ""))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(accounts.existsById(alice.getId())).isTrue();
+        me(token).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void logoutWaitsForCredentialValidationThenRevokesTheNewToken() throws Exception {
         String existing = login(alice);
         var captured = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        doAnswer(
-                        invocation -> {
-                            // Pause after credentials are validated, before the controller can
-                            // issue a JWT.
-                            var authenticated = invocation.callRealMethod();
-                            captured.countDown();
-                            if (!release.await(15, TimeUnit.SECONDS))
-                                throw new IllegalStateException("Timed out waiting for logout");
-                            return authenticated;
-                        })
-                .when(authenticationManager)
-                .authenticate(any(org.springframework.security.core.Authentication.class));
-        try (var pool = Executors.newSingleThreadExecutor()) {
-            var pending = pool.submit(() -> login(alice));
+        var logoutAttempted = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            var authenticated = invocation.callRealMethod();
+            captured.countDown();
+            if (!release.await(15, TimeUnit.SECONDS)) throw new IllegalStateException("Login latch timed out");
+            return authenticated;
+        }).when(authenticationManager).authenticate(any(org.springframework.security.core.Authentication.class));
+        doAnswer(invocation -> {
+            logoutAttempted.countDown();
+            return invocation.callRealMethod();
+        }).when(accounts).lockById(alice.getId());
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var pendingLogin = pool.submit(() -> login(alice));
             try {
                 assertThat(captured.await(15, TimeUnit.SECONDS)).isTrue();
-                logout(existing).andExpect(status().isNoContent());
-            } finally {
+                var pendingLogout = pool.submit(() -> logout(existing).andReturn().getResponse().getStatus());
+                assertThat(logoutAttempted.await(15, TimeUnit.SECONDS)).isTrue();
+                assertThatThrownBy(() -> pendingLogout.get(150, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
                 release.countDown();
-            }
-            String raced = pending.get(15, TimeUnit.SECONDS);
-            assertThat(
-                            JwtAuthVersion.read(decoder.decode(raced).getClaim("auth_version"))
-                                    .orElseThrow())
-                    .isEqualTo(alice.getAuthVersion());
-            me(raced).andExpect(status().isUnauthorized());
+                assertThat(pendingLogout.get(15, TimeUnit.SECONDS)).isEqualTo(204);
+                me(pendingLogin.get(15, TimeUnit.SECONDS)).andExpect(status().isUnauthorized());
+            } finally { release.countDown(); }
         }
     }
 
     @Test
-    void simultaneousLogoutsSerializeAndLeaveAllOldSessionsInvalid() throws Exception {
+    void simultaneousLogoutsHaveOneWinner() throws Exception {
         String one = login(alice), two = login(alice);
         var start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
-            var first =
-                    pool.submit(
-                            () -> {
-                                start.await();
-                                return logout(one).andReturn().getResponse().getStatus();
-                            });
-            var second =
-                    pool.submit(
-                            () -> {
-                                start.await();
-                                return logout(two).andReturn().getResponse().getStatus();
-                            });
+            var first = pool.submit(() -> { start.await(); return logout(one).andReturn().getResponse().getStatus(); });
+            var second = pool.submit(() -> { start.await(); return logout(two).andReturn().getResponse().getStatus(); });
             start.countDown();
-            var results =
-                    List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS));
-            assertThat(results).contains(204);
-            assertThat(results).allMatch(status -> status == 204 || status == 401);
+            assertThat(List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(204, 401);
         }
         me(one).andExpect(status().isUnauthorized());
         me(two).andExpect(status().isUnauthorized());
-        assertThat(accounts.findById(alice.getId()).orElseThrow().getAuthVersion())
-                .isEqualTo(alice.getAuthVersion() + 1);
     }
 
     @Test
-    void anUnexpectedNonBearerAuthenticationCannotBypassLiveValidation() throws Exception {
-        var identity =
-                org.springframework.security.test.web.servlet.request
-                        .SecurityMockMvcRequestPostProcessors.user(alice.getId().toString())
-                        .roles("USER");
+    void unexpectedNonBearerIdentityCannotBypassValidation() throws Exception {
+        var identity = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                .user(alice.getId().toString()).roles("USER");
         mvc.perform(get("/api/auth/me").with(identity)).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/jobs/1").with(identity)).andExpect(status().isUnauthorized());
     }
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "RUN_AUTH_BENCHMARK", matches = "true")
+    void compareLegacyDatabaseLookupWithRedisSessionLookup() throws Exception {
+        var token = decoder.decode(login(alice));
+        String sql = "select id,username,email,role,enabled,email_verified,auth_version from auth_user where id=?";
+        for (int i = 0; i < 30; i++) {
+            jdbc.queryForMap(sql, alice.getId());
+            store.validate(token);
+        }
+        long[] database = new long[300], redis = new long[300];
+        for (int i = 0; i < database.length; i++) {
+            long started = System.nanoTime();
+            jdbc.queryForMap(sql, alice.getId());
+            database[i] = System.nanoTime() - started;
+            started = System.nanoTime();
+            assertThat(store.validate(token)).isPresent();
+            redis[i] = System.nanoTime() - started;
+        }
+        Arrays.sort(database);
+        Arrays.sort(redis);
+        var report = Map.of("samples", database.length,
+                "scope", "local warmed account/session lookup, excluding signature and HTTP",
+                "postgresP50Micros", database[150] / 1000.0, "postgresP95Micros", database[285] / 1000.0,
+                "redisP50Micros", redis[150] / 1000.0, "redisP95Micros", redis[285] / 1000.0,
+                "accountSqlQueriesPerValidationBefore", 1, "accountSqlQueriesPerValidationAfter", 0);
+        java.nio.file.Files.writeString(java.nio.file.Path.of("target/auth-session-benchmark.json"),
+                json.writerWithDefaultPrettyPrinter().writeValueAsString(report));
+    }
+
 }

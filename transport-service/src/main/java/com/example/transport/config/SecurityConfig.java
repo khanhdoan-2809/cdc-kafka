@@ -1,6 +1,6 @@
 package com.example.transport.config;
 
-import com.example.transport.security.AccountSessionStore;
+import com.example.transport.security.RedisSessionStore;
 import com.example.transport.security.LiveAccountFilter;
 import com.example.transport.security.LoginRateLimitFilter;
 import com.example.transport.web.context.AuthenticatedActorFilter;
@@ -44,7 +44,7 @@ public class SecurityConfig {
     @org.springframework.core.annotation.Order(2)
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            AccountSessionStore accounts,
+            RedisSessionStore accounts,
             ObjectMapper json,
             @Value("${auth.login.max-attempts:10}") int maxAttempts,
             @Value("${auth.login.max-peers:10000}") int maxPeers,

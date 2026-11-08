@@ -1,4 +1,4 @@
-# PROD runs application containers only. RDS and MSK are managed AWS services.
+# PROD runs application containers and ephemeral Redis. RDS and MSK are managed AWS services.
 # All ports are loopback-only; no public application ingress until HTTPS/auth is ready.
 x-common: &common
   restart: unless-stopped
@@ -10,6 +10,27 @@ x-common: &common
       max-file: "3"
 
 services:
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    secrets:
+      - redis-password
+    # No snapshots, append-only log, replicas, or host port. Restart invalidates all sessions.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        password="$$(cat /run/secrets/redis-password)"
+        test -n "$$password"
+        # Read the host-protected secret as root, then let the official entrypoint drop privileges.
+        exec /usr/local/bin/docker-entrypoint.sh redis-server --bind 0.0.0.0 --requirepass "$$password" --save "" --appendonly no --maxmemory 128mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$(cat /run/secrets/redis-password)" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   transport-service:
     <<: *common
     image: ${TRANSPORT_IMAGE}
@@ -19,7 +40,10 @@ services:
       - ${AUTH_ENV_FILE:-/etc/cdc-kafka/auth.env}
     volumes:
       - ${JWT_KEYS_DIR:-/etc/cdc-kafka/jwt}:/run/secrets/jwt:ro
+    secrets:
+      - redis-password
     environment:
+      REDIS_HOST: redis
       SPRING_PROFILES_ACTIVE: prod
       JWT_PRIVATE_KEY: file:/run/secrets/jwt/private-key.pem
       JWT_PUBLIC_KEY: file:/run/secrets/jwt/public.pem
@@ -32,6 +56,10 @@ services:
       SPRING_FLYWAY_URL: jdbc:postgresql://${RDS_HOST}:5432/transport?sslmode=require
       TRANSPORT_DB_MAX_POOL_SIZE: "5"
       TRANSPORT_DB_MIN_IDLE: "1"
+
+    depends_on:
+      redis:
+        condition: service_healthy
 
   audit-consumer:
     <<: *common
@@ -54,3 +82,7 @@ services:
       AUDIT_KAFKA_CONCURRENCY: "2"
       AUDIT_DB_MAX_POOL_SIZE: "5"
       AUDIT_DB_MIN_IDLE: "1"
+
+secrets:
+  redis-password:
+    file: ${REDIS_PASSWORD_FILE:-/etc/cdc-kafka/redis-password}

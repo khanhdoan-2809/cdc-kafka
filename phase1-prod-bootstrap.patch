@@ -1,0 +1,105 @@
+diff --git a/.github/workflows/bootstrap-prod-db.yml b/.github/workflows/bootstrap-prod-db.yml
+index fbde600..fc40e04 100644
+--- a/.github/workflows/bootstrap-prod-db.yml
++++ b/.github/workflows/bootstrap-prod-db.yml
+@@ -50,7 +50,7 @@ jobs:
+         run: |
+           terraform init \
+             -reconfigure \
+-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
++            -backend-config="bucket=${{ vars.PROD_TF_STATE_BUCKET }}" \
+             -backend-config="key=prod/terraform.tfstate" \
+             -backend-config="region=${{ vars.AWS_REGION }}" \
+             -backend-config="encrypt=true" \
+diff --git a/.github/workflows/terraform.yml b/.github/workflows/terraform.yml
+index bb57b3c..37a23eb 100644
+--- a/.github/workflows/terraform.yml
++++ b/.github/workflows/terraform.yml
+@@ -25,6 +25,7 @@ env:
+   TF_INPUT: "false"
+   TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+   TF_VAR_aws_account_id: ${{ vars.PROD_AWS_ACCOUNT_ID }}
++  TF_VAR_prod_allowed_cidr: ${{ vars.PROD_ALLOWED_CIDR }}
+ 
+ defaults:
+   run:
+diff --git a/.gitignore b/.gitignore
+index 4bb3bab..fa4e38f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -54,4 +54,8 @@ crash.*.log
+ .env
+ .env.*
+ !.env.example
+-!.env.dev.example
+\ No newline at end of file
++!.env.dev.example
++
++# Keep production bootstrap credentials/state separate from DEV
++**/terraform.prod.tfvars
++**/.terraform-prod/
+diff --git a/infrastructure/terraform/bootstrap/github.tf b/infrastructure/terraform/bootstrap/github.tf
+index 4ad4826..9f4618c 100644
+--- a/infrastructure/terraform/bootstrap/github.tf
++++ b/infrastructure/terraform/bootstrap/github.tf
+@@ -82,7 +82,7 @@ data "aws_iam_policy_document" "github_plan_state" {
+     ]
+ 
+     resources = [
+-      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
++      aws_s3_bucket.terraform_state.arn
+     ]
+   }
+ 
+@@ -94,8 +94,7 @@ data "aws_iam_policy_document" "github_plan_state" {
+     ]
+ 
+     resources = [
+-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate",
+-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate"
++      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}"
+     ]
+   }
+ 
+@@ -109,8 +108,7 @@ data "aws_iam_policy_document" "github_plan_state" {
+     ]
+ 
+     resources = [
+-      "${aws_s3_bucket.terraform_state.arn}/dev/terraform.tfstate.tflock",
+-      "${aws_s3_bucket.terraform_state.arn}/prod/terraform.tfstate.tflock"
++      "${aws_s3_bucket.terraform_state.arn}/${local.state_key}.tflock"
+     ]
+   }
+ }
+@@ -201,7 +199,7 @@ data "aws_iam_policy_document" "github_apply_iam" {
+     ]
+ 
+     resources = [
+-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
++      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-*"
+     ]
+   }
+ 
+@@ -221,7 +219,7 @@ data "aws_iam_policy_document" "github_apply_iam" {
+     ]
+ 
+     resources = [
+-      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-*"
++      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-${var.environment}-*"
+     ]
+   }
+ 
+diff --git a/infrastructure/terraform/bootstrap/terraform.prod.tfvars.example b/infrastructure/terraform/bootstrap/terraform.prod.tfvars.example
+new file mode 100644
+index 0000000..bdf5fcc
+--- /dev/null
++++ b/infrastructure/terraform/bootstrap/terraform.prod.tfvars.example
+@@ -0,0 +1,8 @@
++project_name               = "cdc-kafka"
++aws_region                 = "ap-southeast-1"
++aws_account_id             = "123456789012" # Replace with production AWS account ID
++environment                = "prod"
++github_owner               = "khanhdoan-2809"
++github_repository          = "cdc-kafka"
++github_environment         = "production"
++github_oidc_subject_prefix = "repo:khanhdoan-2809/cdc-kafka"

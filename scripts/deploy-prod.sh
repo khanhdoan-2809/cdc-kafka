@@ -17,7 +17,7 @@ if [[ ! -f /var/lib/cdc-kafka/bootstrap-ready ]]; then
 fi
 
 # Authentication secrets are provisioned separately from release configuration.
-for auth_file in /etc/cdc-kafka/auth.env /etc/cdc-kafka/jwt/private-key.pem /etc/cdc-kafka/jwt/public.pem; do
+for auth_file in /etc/cdc-kafka/auth.env /etc/cdc-kafka/jwt/private-key.pem /etc/cdc-kafka/jwt/public.pem /etc/cdc-kafka/redis-password; do
   [[ -s "$auth_file" ]] || { echo "Missing authentication file: $auth_file" >&2; exit 1; }
 done
 

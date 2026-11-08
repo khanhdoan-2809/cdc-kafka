@@ -1,0 +1,442 @@
+diff --git a/.github/workflows/terraform-dev.yml b/.github/workflows/terraform-dev.yml
+index 15b7b96..9e9b5f8 100644
+--- a/.github/workflows/terraform-dev.yml
++++ b/.github/workflows/terraform-dev.yml
+@@ -5,6 +5,7 @@ on:
+     branches: [dev]
+     paths: &terraform_paths
+       - "infrastructure/terraform/dev/**"
++      - "infrastructure/terraform/modules/app-ec2/**"
+       - ".github/workflows/terraform-dev.yml"
+ 
+   push:
+@@ -38,6 +39,7 @@ jobs:
+           terraform_version: "1.14.0"
+ 
+       - run: terraform fmt -check -recursive
++      - run: terraform fmt -check -recursive ../modules/app-ec2
+       - run: terraform init -backend=false
+       - run: terraform validate
+ 
+diff --git a/infrastructure/terraform/dev/ec2.tf b/infrastructure/terraform/dev/ec2.tf
+index 38ec2ec..bd803aa 100644
+--- a/infrastructure/terraform/dev/ec2.tf
++++ b/infrastructure/terraform/dev/ec2.tf
+@@ -1,130 +1,13 @@
++module "app_ec2" {
++  source = "../modules/app-ec2"
+ 
+-############ Data Sources ############
++  project_name     = var.project_name
++  environment      = var.environment
++  aws_region       = var.aws_region
++  aws_account_id   = var.aws_account_id
++  instance_type    = var.dev_instance_type
++  root_volume_size = var.dev_root_volume_size
+ 
+-data "aws_ssm_parameter" "amazon_linux_2023" {
+-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
++  subnet_id          = aws_subnet.public.id
++  security_group_ids = [aws_security_group.dev.id]
+ }
+-
+-data "aws_partition" "current" {}
+-
+-############ EC2 IAM Role ############
+-
+-data "aws_iam_policy_document" "ec2_assume_role" {
+-  statement {
+-    effect = "Allow"
+-
+-    actions = [
+-      "sts:AssumeRole"
+-    ]
+-
+-    principals {
+-      type = "Service"
+-
+-      identifiers = [
+-        "ec2.amazonaws.com"
+-      ]
+-    }
+-  }
+-}
+-
+-resource "aws_iam_role" "dev" {
+-  name = "${var.project_name}-${var.environment}-ec2"
+-
+-  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+-}
+-
+-############ SSM Access ############
+-
+-resource "aws_iam_role_policy_attachment" "ssm" {
+-  role = aws_iam_role.dev.name
+-
+-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+-}
+-
+-############ ECR Pull Permissions ############
+-
+-data "aws_iam_policy_document" "dev_ecr_pull" {
+-  statement {
+-    sid    = "EcrAuthorization"
+-    effect = "Allow"
+-
+-    actions = [
+-      "ecr:GetAuthorizationToken"
+-    ]
+-
+-    resources = ["*"]
+-  }
+-
+-  statement {
+-    sid    = "PullApplicationImages"
+-    effect = "Allow"
+-
+-    actions = [
+-      "ecr:BatchCheckLayerAvailability",
+-      "ecr:BatchGetImage",
+-      "ecr:GetDownloadUrlForLayer"
+-    ]
+-
+-    resources = [
+-      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-transport-service",
+-      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-audit-consumer"
+-    ]
+-  }
+-}
+-
+-resource "aws_iam_role_policy" "dev_ecr_pull" {
+-  name   = "ecr-pull"
+-  role   = aws_iam_role.dev.id
+-  policy = data.aws_iam_policy_document.dev_ecr_pull.json
+-}
+-
+-############ EC2 Instance Profile ############
+-
+-resource "aws_iam_instance_profile" "dev" {
+-  name = "${var.project_name}-${var.environment}-ec2-instance-profile"
+-  role = aws_iam_role.dev.name
+-}
+-
+-############ EC2 Instance ############
+-
+-resource "aws_instance" "dev" {
+-  ami           = data.aws_ssm_parameter.amazon_linux_2023.value
+-  instance_type = var.dev_instance_type
+-
+-  subnet_id = aws_subnet.public.id
+-
+-  vpc_security_group_ids = [
+-    aws_security_group.dev.id
+-  ]
+-
+-  iam_instance_profile = aws_iam_instance_profile.dev.name
+-
+-  # automatically assign a public IPv4 address to an EC2 instance when it launches,
+-  associate_public_ip_address = true
+-
+-  root_block_device {
+-    volume_type = "gp3"
+-    volume_size = var.dev_root_volume_size
+-
+-    encrypted             = true
+-    delete_on_termination = true
+-  }
+-
+-  metadata_options {
+-    http_endpoint = "enabled"  # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
+-    http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
+-  }
+-
+-  user_data                   = file("${path.module}/user-data.sh")
+-  user_data_replace_on_change = true
+-
+-  lifecycle {
+-    ignore_changes = [
+-      ami
+-    ]
+-  }
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}"
+-  }
+-}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/dev/outputs.tf b/infrastructure/terraform/dev/outputs.tf
+index 4053880..fca7835 100644
+--- a/infrastructure/terraform/dev/outputs.tf
++++ b/infrastructure/terraform/dev/outputs.tf
+@@ -1,17 +1,17 @@
+ 
+ output "dev_instance_id" {
+   description = "DEV EC2 instance ID."
+-  value       = aws_instance.dev.id
++  value       = module.app_ec2.instance_id
+ }
+ 
+ output "dev_public_ip" {
+   description = "DEV EC2 public IP."
+-  value       = aws_instance.dev.public_ip
++  value       = module.app_ec2.public_ip
+ }
+ 
+ output "dev_public_dns" {
+   description = "DEV EC2 public DNS."
+-  value       = aws_instance.dev.public_dns
++  value       = module.app_ec2.public_dns
+ }
+ 
+ output "dev_security_group_id" {
+@@ -21,17 +21,17 @@ output "dev_security_group_id" {
+ 
+ output "dev_ssm_command" {
+   description = "Connect to DEV EC2 using SSM."
+-  value       = "aws ssm start-session --target ${aws_instance.dev.id} --region ${var.aws_region}"
++  value       = "aws ssm start-session --target ${module.app_ec2.instance_id} --region ${var.aws_region}"
+ }
+ 
+ output "dev_transport_db_tunnel" {
+   description = "Forward transport PostgreSQL to localhost:5432."
+-  value       = "aws ssm start-session --target ${aws_instance.dev.id} --region ${var.aws_region} --document-name AWS-StartPortForwardingSession --parameters 'portNumber=5432,localPortNumber=5432'"
++  value       = "aws ssm start-session --target ${module.app_ec2.instance_id} --region ${var.aws_region} --document-name AWS-StartPortForwardingSession --parameters 'portNumber=5432,localPortNumber=5432'"
+ }
+ 
+ output "dev_audit_db_tunnel" {
+   description = "Forward audit PostgreSQL to localhost:5433."
+-  value       = "aws ssm start-session --target ${aws_instance.dev.id} --region ${var.aws_region} --document-name AWS-StartPortForwardingSession --parameters 'portNumber=5433,localPortNumber=5433'"
++  value       = "aws ssm start-session --target ${module.app_ec2.instance_id} --region ${var.aws_region} --document-name AWS-StartPortForwardingSession --parameters 'portNumber=5433,localPortNumber=5433'"
+ }
+ 
+ output "dev_transport_database" {
+@@ -58,15 +58,15 @@ output "dev_audit_database" {
+ 
+ output "dev_transport_url" {
+   description = "Transport API URL."
+-  value       = "http://${aws_instance.dev.public_dns}:8080"
++  value       = "http://${module.app_ec2.public_dns}:8080"
+ }
+ 
+ output "dev_kafka_ui_url" {
+   description = "Kafka UI URL."
+-  value       = "http://${aws_instance.dev.public_dns}:8088"
++  value       = "http://${module.app_ec2.public_dns}:8088"
+ }
+ 
+ output "dev_grafana_url" {
+   description = "Grafana URL."
+-  value       = "http://${aws_instance.dev.public_dns}:3000"
++  value       = "http://${module.app_ec2.public_dns}:3000"
+ }
+diff --git a/infrastructure/terraform/dev/variables.tf b/infrastructure/terraform/dev/variables.tf
+index a31d8c7..638433a 100644
+--- a/infrastructure/terraform/dev/variables.tf
++++ b/infrastructure/terraform/dev/variables.tf
+@@ -30,7 +30,7 @@ variable "vpc_cidr" {
+ variable "dev_instance_type" {
+   description = "EC2 instance type used by the development Docker stack."
+   type        = string
+-  default     = "t3a.large"
++  default     = "t3a.medium"
+ }
+ 
+ variable "dev_root_volume_size" {
+diff --git a/infrastructure/terraform/modules/app-ec2/main.tf b/infrastructure/terraform/modules/app-ec2/main.tf
+new file mode 100644
+index 0000000..54dd2ad
+--- /dev/null
++++ b/infrastructure/terraform/modules/app-ec2/main.tf
+@@ -0,0 +1,128 @@
++
++############ Data Sources ############
++
++data "aws_ssm_parameter" "amazon_linux_2023" {
++  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
++}
++
++data "aws_partition" "current" {}
++
++############ EC2 IAM Role ############
++
++data "aws_iam_policy_document" "ec2_assume_role" {
++  statement {
++    effect = "Allow"
++
++    actions = [
++      "sts:AssumeRole"
++    ]
++
++    principals {
++      type = "Service"
++
++      identifiers = [
++        "ec2.amazonaws.com"
++      ]
++    }
++  }
++}
++
++resource "aws_iam_role" "this" {
++  name = "${var.project_name}-${var.environment}-ec2"
++
++  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
++}
++
++############ SSM Access ############
++
++resource "aws_iam_role_policy_attachment" "ssm" {
++  role = aws_iam_role.this.name
++
++  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
++}
++
++############ ECR Pull Permissions ############
++
++data "aws_iam_policy_document" "ecr_pull" {
++  statement {
++    sid    = "EcrAuthorization"
++    effect = "Allow"
++
++    actions = [
++      "ecr:GetAuthorizationToken"
++    ]
++
++    resources = ["*"]
++  }
++
++  statement {
++    sid    = "PullApplicationImages"
++    effect = "Allow"
++
++    actions = [
++      "ecr:BatchCheckLayerAvailability",
++      "ecr:BatchGetImage",
++      "ecr:GetDownloadUrlForLayer"
++    ]
++
++    resources = [
++      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-transport-service",
++      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.project_name}-audit-consumer"
++    ]
++  }
++}
++
++resource "aws_iam_role_policy" "ecr_pull" {
++  name   = "ecr-pull"
++  role   = aws_iam_role.this.id
++  policy = data.aws_iam_policy_document.ecr_pull.json
++}
++
++############ EC2 Instance Profile ############
++
++resource "aws_iam_instance_profile" "this" {
++  name = "${var.project_name}-${var.environment}-ec2-instance-profile"
++  role = aws_iam_role.this.name
++}
++
++############ EC2 Instance ############
++
++resource "aws_instance" "this" {
++  ami           = data.aws_ssm_parameter.amazon_linux_2023.value
++  instance_type = var.instance_type
++
++  subnet_id = var.subnet_id
++
++  vpc_security_group_ids = var.security_group_ids
++
++  iam_instance_profile = aws_iam_instance_profile.this.name
++
++  # automatically assign a public IPv4 address to an EC2 instance when it launches,
++  associate_public_ip_address = var.associate_public_ip_address
++
++  root_block_device {
++    volume_type = "gp3"
++    volume_size = var.root_volume_size
++
++    encrypted             = true
++    delete_on_termination = true
++  }
++
++  metadata_options {
++    http_endpoint = "enabled"  # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
++    http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
++  }
++
++  user_data                   = file("${path.module}/user-data.sh")
++  user_data_replace_on_change = true
++
++  lifecycle {
++    ignore_changes = [
++      ami
++    ]
++  }
++
++  tags = {
++    Name = "${var.project_name}-${var.environment}"
++  }
++}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/modules/app-ec2/outputs.tf b/infrastructure/terraform/modules/app-ec2/outputs.tf
+new file mode 100644
+index 0000000..8dadccc
+--- /dev/null
++++ b/infrastructure/terraform/modules/app-ec2/outputs.tf
+@@ -0,0 +1,11 @@
++output "instance_id" {
++  value = aws_instance.this.id
++}
++
++output "public_ip" {
++  value = aws_instance.this.public_ip
++}
++
++output "public_dns" {
++  value = aws_instance.this.public_dns
++}
+diff --git a/infrastructure/terraform/dev/user-data.sh b/infrastructure/terraform/modules/app-ec2/user-data.sh
+similarity index 100%
+rename from infrastructure/terraform/dev/user-data.sh
+rename to infrastructure/terraform/modules/app-ec2/user-data.sh
+diff --git a/infrastructure/terraform/modules/app-ec2/variables.tf b/infrastructure/terraform/modules/app-ec2/variables.tf
+new file mode 100644
+index 0000000..a0f56db
+--- /dev/null
++++ b/infrastructure/terraform/modules/app-ec2/variables.tf
+@@ -0,0 +1,36 @@
++variable "project_name" {
++  type = string
++}
++
++variable "environment" {
++  type = string
++}
++
++variable "aws_region" {
++  type = string
++}
++
++variable "aws_account_id" {
++  type = string
++}
++
++variable "instance_type" {
++  type = string
++}
++
++variable "root_volume_size" {
++  type = number
++}
++
++variable "subnet_id" {
++  type = string
++}
++
++variable "security_group_ids" {
++  type = list(string)
++}
++
++variable "associate_public_ip_address" {
++  type    = bool
++  default = true
++}

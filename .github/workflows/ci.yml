@@ -25,6 +25,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
+      - name: Validate deployment scripts and Compose
+        run: |
+          bash -n scripts/account-admin.sh scripts/smoke-redis-sessions.sh scripts/init-dev-auth.sh scripts/deploy-prod.sh
+          docker compose -f compose.yml config --no-env-resolution --no-interpolate --quiet
+          docker compose -f compose.prod.yml config --no-env-resolution --no-interpolate --quiet
+
+      - name: Install Redis for integration tests
+        run: sudo apt-get update -qq && sudo apt-get install -y redis-server
+
       - name: Setup Java
         uses: actions/setup-java@v6.0.1
         with:

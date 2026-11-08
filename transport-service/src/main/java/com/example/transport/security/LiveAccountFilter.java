@@ -20,12 +20,12 @@ import java.util.*;
 // context.
 public class LiveAccountFilter extends OncePerRequestFilter {
     public static final String ACCOUNT_ATTRIBUTE = "com.example.transport.security.verifiedAccount";
-    private final AccountSessionStore accounts;
+    private final RedisSessionStore accounts;
     private final AuthenticationEntryPoint entryPoint;
     private final ObjectMapper json;
 
     public LiveAccountFilter(
-            AccountSessionStore accounts, AuthenticationEntryPoint entryPoint, ObjectMapper json) {
+            RedisSessionStore accounts, AuthenticationEntryPoint entryPoint, ObjectMapper json) {
         this.accounts = accounts;
         this.entryPoint = entryPoint;
         this.json = json;
@@ -40,7 +40,7 @@ public class LiveAccountFilter extends OncePerRequestFilter {
             AccountSessionState account;
             try {
                 account =
-                        accounts.findById(UUID.fromString(token.getToken().getSubject()))
+                        accounts.validate(token.getToken())
                                 .orElse(null);
             } catch (DataAccessException unavailable) {
                 SecurityContextHolder.clearContext();
@@ -61,7 +61,7 @@ public class LiveAccountFilter extends OncePerRequestFilter {
                                 request.getRequestURI()));
                 return;
             }
-            if (account == null || !account.accepts(token.getToken())) {
+            if (account == null) {
                 SecurityContextHolder.clearContext();
                 entryPoint.commence(
                         request, response, new BadCredentialsException("Invalid authentication"));

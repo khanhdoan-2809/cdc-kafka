@@ -12,6 +12,10 @@ import java.util.UUID;
 public interface AccountRepository extends JpaRepository<Account, UUID> {
     Optional<Account> findByUsername(String username);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from Account a where a.username = :username")
+    Optional<Account> lockByUsername(String username);
+
     boolean existsByUsernameOrEmail(String username, String email);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -61,6 +61,7 @@ class AuthorizationIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired AccountRepository accounts;
     @Autowired JwtService tokens;
+    @Autowired RedisSessionStore sessions;
     @Autowired JwtDecoder decoder;
     @Autowired ObjectMapper json;
     @Autowired TransportService transports;
@@ -130,11 +131,10 @@ class AuthorizationIntegrationTest {
     }
 
     String token(Account user) {
-        return tokens.generateToken(
-                user.getId().toString(),
-                user.getUsername(),
-                List.of("ROLE_" + user.getRole()),
-                user.getAuthVersion());
+        var jwt = tokens.generateToken(user.getId().toString(), user.getUsername(), List.of("ROLE_" + user.getRole()));
+        sessions.create(new AccountSessionState(user.getId(), user.getUsername(), user.getEmail(),
+                user.getRole(), UUID.fromString(jwt.getId()), jwt.getExpiresAt()));
+        return jwt.getTokenValue();
     }
 
     void grant(long transport, Account user) {
@@ -445,7 +445,7 @@ class AuthorizationIntegrationTest {
         }
         String roleless =
                 tokens.generateToken(
-                        alice.getId().toString(), "alice", List.of(), alice.getAuthVersion());
+                        alice.getId().toString(), "alice", List.of()).getTokenValue();
         getAs("/api/jobs/11", roleless).andExpect(status().isUnauthorized());
         mvc.perform(
                         post("/api/transports")

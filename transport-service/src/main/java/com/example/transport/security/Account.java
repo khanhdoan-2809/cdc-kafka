@@ -27,9 +27,6 @@ public class Account {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified;
 
-    @Column(name = "auth_version", nullable = false)
-    private long authVersion;
-
     protected Account() {}
 
     public Account(String username, String passwordHash, String role) {
@@ -58,7 +55,6 @@ public class Account {
     public void verifyEmail() {
         if (email == null || email.isBlank()) throw new IllegalStateException("Email is required");
         if (!emailVerified) {
-            invalidateSessions();
             this.emailVerified = true;
         }
     }
@@ -85,16 +81,14 @@ public class Account {
 
     public void setEnabled(boolean enabled) {
         if (this.enabled != enabled) {
-            invalidateSessions();
             this.enabled = enabled;
         }
     }
 
-    public long getAuthVersion() {
-        return authVersion;
-    }
-
-    public void invalidateSessions() {
-        authVersion = Math.incrementExact(authVersion);
+    // Security mutations must go through AccountSecurityService.
+    void changeRole(String role) {
+        if (!java.util.Set.of("ADMIN", "USER").contains(role))
+            throw new IllegalArgumentException("Unsupported role");
+        this.role = role;
     }
 }

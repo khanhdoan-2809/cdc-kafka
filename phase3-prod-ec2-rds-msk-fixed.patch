@@ -1,0 +1,1859 @@
+diff --git a/.github/workflows/bootstrap-prod-db.yml b/.github/workflows/bootstrap-prod-db.yml
+deleted file mode 100644
+index fc40e04..0000000
+--- a/.github/workflows/bootstrap-prod-db.yml
++++ /dev/null
+@@ -1,62 +0,0 @@
+-name: Bootstrap PROD Database
+-
+-on:
+-  workflow_dispatch:
+-
+-permissions:
+-  contents: read
+-
+-env:
+-  AWS_REGION: ${{ vars.AWS_REGION }}
+-  TF_IN_AUTOMATION: "true"
+-  TF_INPUT: "false"
+-
+-jobs:
+-  bootstrap:
+-    name: Bootstrap PostgreSQL
+-    runs-on: ubuntu-latest
+-
+-    if: github.ref == 'refs/heads/main'
+-
+-    environment:
+-      name: production
+-
+-    concurrency:
+-      group: production-db-bootstrap
+-      cancel-in-progress: false
+-
+-    permissions:
+-      contents: read
+-      id-token: write
+-
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v7
+-
+-      - name: Setup Terraform
+-        uses: hashicorp/setup-terraform@v4
+-        with:
+-          terraform_version: "1.14.0"
+-
+-      - name: Configure AWS credentials
+-        uses: aws-actions/configure-aws-credentials@v6
+-        with:
+-          role-to-assume: ${{ vars.PROD_TERRAFORM_APPLY_ROLE_ARN }}
+-          aws-region: ${{ vars.AWS_REGION }}
+-          allowed-account-ids: ${{ vars.PROD_AWS_ACCOUNT_ID }}
+-
+-      - name: Terraform init
+-        working-directory: infrastructure/terraform/prod
+-        run: |
+-          terraform init \
+-            -reconfigure \
+-            -backend-config="bucket=${{ vars.PROD_TF_STATE_BUCKET }}" \
+-            -backend-config="key=prod/terraform.tfstate" \
+-            -backend-config="region=${{ vars.AWS_REGION }}" \
+-            -backend-config="encrypt=true" \
+-            -backend-config="use_lockfile=true"
+-
+-      - name: Bootstrap database
+-        run: |
+-          chmod +x scripts/bootstrap-prod-db.sh
+-          ./scripts/bootstrap-prod-db.sh
+\ No newline at end of file
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+deleted file mode 100644
+index 3174919..0000000
+--- a/.github/workflows/release.yml
++++ /dev/null
+@@ -1,216 +0,0 @@
+-name: Release PROD
+-
+-on:
+-  push:
+-    tags:
+-      - "v*.*.*"
+-
+-permissions:
+-  contents: read
+-
+-concurrency:
+-  group: production-release
+-  cancel-in-progress: false
+-
+-env:
+-  AWS_REGION: ${{ vars.AWS_REGION }}
+-
+-  TRANSPORT_ECR_REPOSITORY: cdc-kafka-transport-service
+-  AUDIT_ECR_REPOSITORY: cdc-kafka-audit-consumer
+-
+-  ECS_CLUSTER: cdc-kafka-prod
+-
+-  TRANSPORT_SERVICE: transport-service
+-  AUDIT_SERVICE: audit-consumer
+-
+-  TRANSPORT_TASK_FAMILY: cdc-kafka-prod-transport-service
+-  AUDIT_TASK_FAMILY: cdc-kafka-prod-audit-consumer
+-
+-  TRANSPORT_DESIRED_COUNT: 2
+-  AUDIT_DESIRED_COUNT: 1
+-
+-jobs:
+-  validate:
+-    runs-on: ubuntu-latest
+-
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v7.0.1
+-        with:
+-          fetch-depth: 0
+-
+-      - name: Validate release tag and commit
+-        shell: bash
+-        run: |
+-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+-            echo "Invalid release tag: $GITHUB_REF_NAME" >&2
+-            exit 1
+-          fi
+-
+-          git fetch origin main
+-
+-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+-            echo "Release commit must already be on main" >&2
+-            exit 1
+-          fi
+-
+-  release:
+-    needs: validate
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 90
+-
+-    environment: production
+-
+-    permissions:
+-      contents: read
+-      id-token: write
+-
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v7.0.1
+-
+-      - name: Configure PROD AWS credentials
+-        uses: aws-actions/configure-aws-credentials@v6.3.0
+-        with:
+-          role-to-assume: ${{ vars.PROD_DEPLOY_ROLE_ARN }}
+-          aws-region: ${{ vars.AWS_REGION }}
+-          allowed-account-ids: ${{ vars.PROD_AWS_ACCOUNT_ID }}
+-
+-      - name: Login to PROD ECR
+-        id: ecr
+-        uses: aws-actions/amazon-ecr-login@v2.1.7
+-
+-      - name: Image names
+-        id: images
+-        run: |
+-          echo "transport=${{ steps.ecr.outputs.registry }}/${TRANSPORT_ECR_REPOSITORY}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+-          echo "audit=${{ steps.ecr.outputs.registry }}/${AUDIT_ECR_REPOSITORY}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+-
+-      - name: Build and push transport image
+-        env:
+-          IMAGE: ${{ steps.images.outputs.transport }}
+-        run: |
+-          if aws ecr describe-images \
+-            --repository-name "$TRANSPORT_ECR_REPOSITORY" \
+-            --image-ids "imageTag=$GITHUB_REF_NAME" \
+-            >/dev/null 2>&1; then
+-
+-            echo "Transport image already exists; reusing immutable tag"
+-          else
+-            docker build -t "$IMAGE" ./transport-service
+-            docker push "$IMAGE"
+-          fi
+-
+-      - name: Build and push audit image
+-        env:
+-          IMAGE: ${{ steps.images.outputs.audit }}
+-        run: |
+-          if aws ecr describe-images \
+-            --repository-name "$AUDIT_ECR_REPOSITORY" \
+-            --image-ids "imageTag=$GITHUB_REF_NAME" \
+-            >/dev/null 2>&1; then
+-
+-            echo "Audit image already exists; reusing immutable tag"
+-          else
+-            docker build -t "$IMAGE" ./audit-consumer
+-            docker push "$IMAGE"
+-          fi
+-
+-      # Deploy Audit Consumer first.
+-
+-      - name: Download audit task definition
+-        run: |
+-          aws ecs describe-task-definition \
+-            --task-definition "$AUDIT_TASK_FAMILY" \
+-            --query taskDefinition > audit-task-definition.json
+-
+-      - name: Render audit task definition
+-        id: audit-task
+-        uses: aws-actions/amazon-ecs-render-task-definition@v1.9.0
+-        with:
+-          task-definition: audit-task-definition.json
+-          container-name: audit-consumer
+-          image: ${{ steps.images.outputs.audit }}
+-
+-      - name: Deploy audit consumer
+-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2.6.3
+-        with:
+-          task-definition: ${{ steps.audit-task.outputs.task-definition }}
+-          service: ${{ env.AUDIT_SERVICE }}
+-          cluster: ${{ env.ECS_CLUSTER }}
+-          wait-for-service-stability: true
+-          wait-max-delay-seconds: 15
+-
+-      - name: Ensure audit consumer is running
+-        run: |
+-          aws ecs update-service \
+-            --cluster "$ECS_CLUSTER" \
+-            --service "$AUDIT_SERVICE" \
+-            --desired-count "$AUDIT_DESIRED_COUNT" >/dev/null
+-
+-          aws ecs wait services-stable \
+-            --cluster "$ECS_CLUSTER" \
+-            --services "$AUDIT_SERVICE"
+-
+-      # Deploy Transport Service.
+-
+-      - name: Download transport task definition
+-        run: |
+-          aws ecs describe-task-definition \
+-            --task-definition "$TRANSPORT_TASK_FAMILY" \
+-            --query taskDefinition > transport-task-definition.json
+-
+-      - name: Render transport task definition
+-        id: transport-task
+-        uses: aws-actions/amazon-ecs-render-task-definition@v1.9.0
+-        with:
+-          task-definition: transport-task-definition.json
+-          container-name: transport-service
+-          image: ${{ steps.images.outputs.transport }}
+-
+-      - name: Deploy transport service
+-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2.6.3
+-        with:
+-          task-definition: ${{ steps.transport-task.outputs.task-definition }}
+-          service: ${{ env.TRANSPORT_SERVICE }}
+-          cluster: ${{ env.ECS_CLUSTER }}
+-          wait-for-service-stability: true
+-          wait-max-delay-seconds: 15
+-
+-      - name: Ensure transport service is running
+-        run: |
+-          aws ecs update-service \
+-            --cluster "$ECS_CLUSTER" \
+-            --service "$TRANSPORT_SERVICE" \
+-            --desired-count "$TRANSPORT_DESIRED_COUNT" >/dev/null
+-
+-          aws ecs wait services-stable \
+-            --cluster "$ECS_CLUSTER" \
+-            --services "$TRANSPORT_SERVICE"
+-
+-      # Final verification.
+-
+-      - name: Verify both ECS services
+-        run: |
+-          for entry in "$AUDIT_SERVICE:$AUDIT_DESIRED_COUNT" "$TRANSPORT_SERVICE:$TRANSPORT_DESIRED_COUNT"; do
+-            service="${entry%%:*}"
+-            expected="${entry##*:}"
+-
+-            result="$(aws ecs describe-services \
+-              --cluster "$ECS_CLUSTER" \
+-              --services "$service")"
+-
+-            echo "$result" | jq -e --argjson expected "$expected" '
+-              (.failures | length) == 0 and
+-              (.services | length) == 1 and
+-              (.services[0].status == "ACTIVE") and
+-              (.services[0].desiredCount == $expected) and
+-              (.services[0].runningCount == $expected) and
+-              (.services[0].pendingCount == 0)
+-            ' >/dev/null || {
+-              echo "ECS service $service is not healthy" >&2
+-              exit 1
+-            }
+-
+-            echo "ECS $service: $expected tasks running"
+-          done
+diff --git a/.github/workflows/terraform.yml b/.github/workflows/terraform.yml
+index bb57b3c..ef82952 100644
+--- a/.github/workflows/terraform.yml
++++ b/.github/workflows/terraform.yml
+@@ -6,6 +6,7 @@ on:
+       - main
+     paths:
+       - "infrastructure/terraform/prod/**"
++      - "infrastructure/terraform/modules/app-ec2/**"
+       - ".github/workflows/terraform.yml"
+ 
+   push:
+@@ -13,6 +14,7 @@ on:
+       - main
+     paths:
+       - "infrastructure/terraform/prod/**"
++      - "infrastructure/terraform/modules/app-ec2/**"
+       - ".github/workflows/terraform.yml"
+ 
+   workflow_dispatch:
+@@ -45,7 +47,9 @@ jobs:
+           terraform_version: "1.14.0"
+ 
+       - name: Terraform format
+-        run: terraform fmt -check -recursive
++        run: |
++          terraform fmt -check -recursive .
++          terraform fmt -check -recursive ../modules/app-ec2
+ 
+       - name: Terraform init
+         run: terraform init -backend=false
+diff --git a/infrastructure/terraform/bootstrap/github.tf b/infrastructure/terraform/bootstrap/github.tf
+index 4ad4826..9557520 100644
+--- a/infrastructure/terraform/bootstrap/github.tf
++++ b/infrastructure/terraform/bootstrap/github.tf
+@@ -196,6 +196,7 @@ data "aws_iam_policy_document" "github_apply_iam" {
+       "iam:DetachRolePolicy",
+       "iam:ListAttachedRolePolicies",
+       "iam:ListRolePolicies",
++      "iam:ListInstanceProfilesForRole",
+ 
+       "iam:PassRole"
+     ]
+@@ -205,6 +206,25 @@ data "aws_iam_policy_document" "github_apply_iam" {
+     ]
+   }
+ 
++  statement {
++    sid    = "ManageProjectInstanceProfiles"
++    effect = "Allow"
++
++    actions = [
++      "iam:CreateInstanceProfile",
++      "iam:DeleteInstanceProfile",
++      "iam:GetInstanceProfile",
++      "iam:AddRoleToInstanceProfile",
++      "iam:RemoveRoleFromInstanceProfile",
++      "iam:TagInstanceProfile",
++      "iam:UntagInstanceProfile"
++    ]
++
++    resources = [
++      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.project_name}-${var.environment}-*"
++    ]
++  }
++
+   statement {
+     sid    = "ManageProjectPolicies"
+     effect = "Allow"
+diff --git a/infrastructure/terraform/modules/app-ec2/main.tf b/infrastructure/terraform/modules/app-ec2/main.tf
+index 54dd2ad..ec7fb92 100644
+--- a/infrastructure/terraform/modules/app-ec2/main.tf
++++ b/infrastructure/terraform/modules/app-ec2/main.tf
+@@ -108,9 +108,11 @@ resource "aws_instance" "this" {
+     delete_on_termination = true
+   }
+ 
++  # IMDSv2; hop limit 2 lets Docker containers use temporary EC2 IAM credentials.
+   metadata_options {
+-    http_endpoint = "enabled"  # Enables IMDS so the EC2 instance can retrieve metadata and temporary IAM role credentials
+-    http_tokens   = "required" # Requires an IMDSv2 token to access metadata. Requests without a valid token are rejected
++    http_endpoint               = "enabled"
++    http_tokens                 = "required"
++    http_put_response_hop_limit = 2
+   }
+ 
+   user_data                   = file("${path.module}/user-data.sh")
+diff --git a/infrastructure/terraform/modules/app-ec2/outputs.tf b/infrastructure/terraform/modules/app-ec2/outputs.tf
+index 8dadccc..6dc41b8 100644
+--- a/infrastructure/terraform/modules/app-ec2/outputs.tf
++++ b/infrastructure/terraform/modules/app-ec2/outputs.tf
+@@ -9,3 +9,7 @@ output "public_ip" {
+ output "public_dns" {
+   value = aws_instance.this.public_dns
+ }
++
++output "role_name" {
++  value = aws_iam_role.this.name
++}
+diff --git a/infrastructure/terraform/prod/NOTE.md b/infrastructure/terraform/prod/NOTE.md
+index deef632..49d9028 100644
+--- a/infrastructure/terraform/prod/NOTE.md
++++ b/infrastructure/terraform/prod/NOTE.md
+@@ -1,3 +1,20 @@
+-terraform init -backend-config=backend.hcl
+-terraform validate
+-terraform plan
+\ No newline at end of file
++# PROD infrastructure — Phase 3
++
++Uses a separate production AWS account and state bucket.
++
++Infrastructure: one EC2 Docker host, private PostgreSQL RDS, MSK Serverless,
++ECR and an optional MSK Connect connector. A NAT gateway is created only when
++`enable_msk_connect=true` to support private MSK Connect workers. This adds
++a fixed monthly cost after CDC is enabled.
++
++1. Configure `terraform.tfvars` using `terraform.tfvars.example` in the PROD account.
++2. Initialize the existing PROD S3 backend with the correct `PROD_TF_STATE_BUCKET`.
++3. Run `terraform fmt -check -recursive`, `terraform validate` and `terraform plan`.
++4. Review and approve a manual `Terraform PROD` workflow dispatch on `main`.
++
++Do not deploy the applications yet. No HTTP/HTTPS ingress is open on the host.
++Database secret values, DB bootstrap, production Docker Compose and GitHub
++release deployment are in subsequent phases.
++
++**The old ECS release and database bootstrap workflows were removed**, as they
++would no longer work for the EC2 design. New workflows are implemented later.
+diff --git a/infrastructure/terraform/prod/alb.tf b/infrastructure/terraform/prod/alb.tf
+deleted file mode 100644
+index ce25770..0000000
+--- a/infrastructure/terraform/prod/alb.tf
++++ /dev/null
+@@ -1,129 +0,0 @@
+-resource "aws_security_group" "alb" {
+-  name        = "${var.project_name}-${var.environment}-alb"
+-  description = "Security group for transport-service ALB"
+-  vpc_id      = aws_vpc.main.id
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-alb-sg"
+-  }
+-}
+-
+-resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+-  security_group_id = aws_security_group.alb.id
+-  description       = "Temporary trusted access to Transport API"
+-  ip_protocol       = "tcp"
+-  from_port         = 80
+-  to_port           = 80
+-  cidr_ipv4         = var.prod_allowed_cidr
+-}
+-
+-resource "aws_security_group" "transport_ecs" {
+-  name        = "${var.project_name}-${var.environment}-transport-ecs"
+-  description = "Security group for transport-service ECS tasks"
+-  vpc_id      = aws_vpc.main.id
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-transport-ecs-sg"
+-  }
+-}
+-
+-resource "aws_vpc_security_group_ingress_rule" "transport_from_alb" {
+-  security_group_id = aws_security_group.transport_ecs.id
+-
+-  referenced_security_group_id = aws_security_group.alb.id
+-
+-  description = "Allow ALB to reach transport-service"
+-
+-  ip_protocol = "tcp"
+-  from_port   = var.transport_container_port
+-  to_port     = var.transport_container_port
+-}
+-
+-resource "aws_vpc_security_group_egress_rule" "alb_to_transport" {
+-  security_group_id = aws_security_group.alb.id
+-
+-  referenced_security_group_id = aws_security_group.transport_ecs.id
+-
+-  description = "Allow ALB to reach transport-service"
+-
+-  ip_protocol = "tcp"
+-  from_port   = var.transport_container_port
+-  to_port     = var.transport_container_port
+-}
+-
+-resource "aws_vpc_security_group_egress_rule" "transport_outbound" {
+-  security_group_id = aws_security_group.transport_ecs.id
+-
+-  description = "Allow transport-service outbound traffic"
+-
+-  ip_protocol = "-1"
+-  cidr_ipv4   = "0.0.0.0/0"
+-}
+-
+-# Application Load Balancer
+-resource "aws_lb" "transport" {
+-  name = "${var.project_name}-${var.environment}"
+-
+-  load_balancer_type = "application"
+-
+-  internal = false
+-
+-  security_groups = [
+-    aws_security_group.alb.id
+-  ]
+-
+-  subnets = aws_subnet.public[*].id
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-alb"
+-  }
+-}
+-
+-# Target Group
+-resource "aws_lb_target_group" "transport" {
+-  name = "${var.project_name}-${var.environment}-transport"
+-
+-  port     = var.transport_container_port
+-  protocol = "HTTP"
+-
+-  vpc_id = aws_vpc.main.id
+-
+-  target_type = "ip"
+-
+-  deregistration_delay = 30
+-
+-  health_check {
+-    enabled = true
+-
+-    path     = "/actuator/health"
+-    protocol = "HTTP"
+-
+-    port = "traffic-port"
+-
+-    matcher = "200"
+-
+-    interval = 30
+-    timeout  = 5
+-
+-    healthy_threshold   = 2
+-    unhealthy_threshold = 3
+-  }
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-transport-tg"
+-  }
+-}
+-
+-# HTTP listener
+-resource "aws_lb_listener" "http" {
+-  load_balancer_arn = aws_lb.transport.arn
+-
+-  port     = 80
+-  protocol = "HTTP"
+-
+-  default_action {
+-    type = "forward"
+-
+-    target_group_arn = aws_lb_target_group.transport.arn
+-  }
+-}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/prod/audit-ecs.tf b/infrastructure/terraform/prod/audit-ecs.tf
+deleted file mode 100644
+index 280745a..0000000
+--- a/infrastructure/terraform/prod/audit-ecs.tf
++++ /dev/null
+@@ -1,297 +0,0 @@
+-############ Audit Consumer Security Group ############
+-
+-resource "aws_security_group" "audit_ecs" {
+-  name        = "${var.project_name}-${var.environment}-audit-ecs"
+-  description = "Security group for audit-consumer ECS"
+-  vpc_id      = aws_vpc.main.id
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-audit-ecs"
+-  }
+-}
+-
+-resource "aws_vpc_security_group_egress_rule" "audit_outbound" {
+-  security_group_id = aws_security_group.audit_ecs.id
+-
+-  description = "Allow audit consumer outbound traffic"
+-
+-  ip_protocol = "-1"
+-  cidr_ipv4   = "0.0.0.0/0"
+-}
+-
+-resource "aws_vpc_security_group_ingress_rule" "rds_from_audit" {
+-  security_group_id = aws_security_group.rds.id
+-
+-  referenced_security_group_id = aws_security_group.audit_ecs.id
+-
+-  description = "Allow audit consumer to access PostgreSQL"
+-
+-  ip_protocol = "tcp"
+-  from_port   = 5432
+-  to_port     = 5432
+-}
+-
+-############ CloudWatch ############
+-
+-resource "aws_cloudwatch_log_group" "audit" {
+-  name              = "/ecs/${var.project_name}/${var.environment}/audit-consumer"
+-  retention_in_days = 14
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-audit-logs"
+-  }
+-}
+-
+-############ ECS Task Role ############
+-
+-resource "aws_iam_role" "audit_task" {
+-  name = "${var.project_name}-${var.environment}-audit-task"
+-
+-  assume_role_policy = data.aws_iam_policy_document.ecs_task_execution_assume_role.json
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-audit-task"
+-  }
+-}
+-
+-############ MSK IAM Permissions ############
+-
+-locals {
+-  audit_source_topics = [
+-    "transport.public.transport",
+-    "transport.public.job",
+-    "transport.public.container"
+-  ]
+-
+-  audit_dlt_topics = [
+-    for topic in local.audit_source_topics : "${topic}.dlt"
+-  ]
+-
+-  audit_all_topics = concat(
+-    local.audit_source_topics,
+-    local.audit_dlt_topics
+-  )
+-}
+-
+-data "aws_iam_policy_document" "audit_msk" {
+-  statement {
+-    sid    = "ConnectToMSK"
+-    effect = "Allow"
+-
+-    actions = [
+-      "kafka-cluster:Connect",
+-      "kafka-cluster:DescribeCluster",
+-      "kafka-cluster:WriteDataIdempotently"
+-    ]
+-
+-    resources = [
+-      aws_msk_serverless_cluster.main.arn
+-    ]
+-  }
+-
+-  statement {
+-    sid    = "ReadKafkaTopics"
+-    effect = "Allow"
+-
+-    actions = [
+-      "kafka-cluster:DescribeTopic",
+-      "kafka-cluster:ReadData"
+-    ]
+-
+-    resources = [
+-      for topic in local.audit_all_topics :
+-      "${local.msk_topic_arn_prefix}/${topic}"
+-    ]
+-  }
+-
+-  statement {
+-    sid    = "PublishAndCreateDLT"
+-    effect = "Allow"
+-
+-    actions = [
+-      "kafka-cluster:CreateTopic",
+-      "kafka-cluster:WriteData"
+-    ]
+-
+-    resources = [
+-      for topic in local.audit_dlt_topics :
+-      "${local.msk_topic_arn_prefix}/${topic}"
+-    ]
+-  }
+-
+-  statement {
+-    sid    = "KafkaConsumerGroups"
+-    effect = "Allow"
+-
+-    actions = [
+-      "kafka-cluster:DescribeGroup",
+-      "kafka-cluster:AlterGroup"
+-    ]
+-
+-    resources = [
+-      "${local.msk_group_arn_prefix}/audit-consumer",
+-      "${local.msk_group_arn_prefix}/audit-dlt-replay"
+-    ]
+-  }
+-}
+-
+-resource "aws_iam_role_policy" "audit_msk" {
+-  name   = "msk-access"
+-  role   = aws_iam_role.audit_task.id
+-  policy = data.aws_iam_policy_document.audit_msk.json
+-}
+-
+-############ ECS Task Definition ############
+-
+-resource "aws_ecs_task_definition" "audit" {
+-  family = "${var.project_name}-${var.environment}-audit-consumer"
+-
+-  requires_compatibilities = ["FARGATE"]
+-
+-  network_mode = "awsvpc"
+-
+-  cpu    = 512
+-  memory = 1024
+-
+-  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+-  task_role_arn      = aws_iam_role.audit_task.arn
+-
+-  runtime_platform {
+-    operating_system_family = "LINUX"
+-    cpu_architecture        = "X86_64"
+-  }
+-
+-  container_definitions = jsonencode([
+-    {
+-      name = "audit-consumer"
+-
+-      # Replaced with a real release image by GitHub Actions.
+-      image = "${aws_ecr_repository.app["audit_consumer"].repository_url}:bootstrap"
+-
+-      essential = true
+-
+-      environment = [
+-        {
+-          name  = "SPRING_PROFILES_ACTIVE"
+-          value = "prod"
+-        },
+-        {
+-          name  = "SERVER_PORT"
+-          value = "8081"
+-        },
+-        {
+-          name  = "AUDIT_DB_HOST"
+-          value = aws_db_instance.postgres.address
+-        },
+-        {
+-          name  = "AUDIT_DB_PORT"
+-          value = tostring(aws_db_instance.postgres.port)
+-        },
+-        {
+-          name  = "AUDIT_DB_NAME"
+-          value = var.audit_db_name
+-        },
+-        {
+-          name  = "SPRING_DATASOURCE_URL"
+-          value = "jdbc:postgresql://${aws_db_instance.postgres.address}:${aws_db_instance.postgres.port}/${var.audit_db_name}?sslmode=require"
+-        },
+-        {
+-          name  = "KAFKA_BOOTSTRAP_SERVERS"
+-          value = aws_msk_serverless_cluster.main.bootstrap_brokers_sasl_iam
+-        },
+-        {
+-          name  = "AUDIT_DLT_REPLICATION_FACTOR"
+-          value = "-1"
+-        },
+-        {
+-          name  = "AUDIT_DB_MAX_POOL_SIZE"
+-          value = "5"
+-        },
+-        {
+-          name  = "AUDIT_DB_MIN_IDLE"
+-          value = "1"
+-        },
+-        {
+-          name  = "AUDIT_KAFKA_CONCURRENCY"
+-          value = "3"
+-        },
+-        {
+-          name  = "AUDIT_DLT_REPLAY_ENABLED"
+-          value = "false"
+-        }
+-      ]
+-
+-      secrets = [
+-        {
+-          name      = "AUDIT_DB_USERNAME"
+-          valueFrom = "${aws_secretsmanager_secret.audit_db_app.arn}:username::"
+-        },
+-        {
+-          name      = "AUDIT_DB_PASSWORD"
+-          valueFrom = "${aws_secretsmanager_secret.audit_db_app.arn}:password::"
+-        }
+-      ]
+-
+-      logConfiguration = {
+-        logDriver = "awslogs"
+-
+-        options = {
+-          awslogs-group         = aws_cloudwatch_log_group.audit.name
+-          awslogs-region        = var.aws_region
+-          awslogs-stream-prefix = "audit"
+-        }
+-      }
+-    }
+-  ])
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-audit-consumer"
+-  }
+-}
+-
+-############ ECS Service ############
+-
+-resource "aws_ecs_service" "audit" {
+-  name = "audit-consumer"
+-
+-  cluster         = aws_ecs_cluster.main.id
+-  task_definition = aws_ecs_task_definition.audit.arn
+-
+-  # The first production release starts this service.
+-  desired_count = 0
+-
+-  launch_type = "FARGATE"
+-
+-  network_configuration {
+-    subnets = aws_subnet.app[*].id
+-
+-    security_groups = [
+-      aws_security_group.audit_ecs.id,
+-      aws_security_group.msk_client.id
+-    ]
+-
+-    assign_public_ip = false
+-  }
+-
+-  deployment_minimum_healthy_percent = 100
+-  deployment_maximum_percent         = 200
+-
+-  deployment_circuit_breaker {
+-    enable   = true
+-    rollback = true
+-  }
+-
+-  enable_ecs_managed_tags = true
+-
+-  lifecycle {
+-    # Releases and scaling are managed by GitHub Actions.
+-    ignore_changes = [
+-      task_definition,
+-      desired_count
+-    ]
+-  }
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-audit-consumer"
+-  }
+-}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/prod/db-bootstrap.tf b/infrastructure/terraform/prod/db-bootstrap.tf
+index 351a822..fee4013 100644
+--- a/infrastructure/terraform/prod/db-bootstrap.tf
++++ b/infrastructure/terraform/prod/db-bootstrap.tf
+@@ -29,300 +29,3 @@ resource "aws_secretsmanager_secret" "debezium_db" {
+     Name = "${var.project_name}-${var.environment}-debezium-db"
+   }
+ }
+-
+-############ Bootstrap Security Group ############
+-
+-resource "aws_security_group" "db_bootstrap" {
+-  name        = "${var.project_name}-${var.environment}-db-bootstrap"
+-  description = "Security group for one-off database bootstrap task"
+-  vpc_id      = aws_vpc.main.id
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-db-bootstrap-sg"
+-  }
+-}
+-
+-resource "aws_vpc_security_group_egress_rule" "db_bootstrap_outbound" {
+-  security_group_id = aws_security_group.db_bootstrap.id
+-
+-  description = "Allow bootstrap task outbound traffic"
+-
+-  ip_protocol = "-1"
+-  cidr_ipv4   = "0.0.0.0/0"
+-}
+-
+-############ CloudWatch ############
+-
+-resource "aws_cloudwatch_log_group" "db_bootstrap" {
+-  name = "/ecs/${var.project_name}/${var.environment}/db-bootstrap"
+-
+-  retention_in_days = 14
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-db-bootstrap"
+-  }
+-}
+-
+-############ ECS Secret Access ############
+-
+-data "aws_iam_policy_document" "ecs_db_secret_access" {
+-  statement {
+-    effect = "Allow"
+-
+-    actions = [
+-      "secretsmanager:GetSecretValue"
+-    ]
+-
+-    resources = [
+-      aws_db_instance.postgres.master_user_secret[0].secret_arn,
+-      aws_secretsmanager_secret.transport_db_app.arn,
+-      aws_secretsmanager_secret.audit_db_app.arn,
+-      aws_secretsmanager_secret.debezium_db.arn
+-    ]
+-  }
+-}
+-
+-resource "aws_iam_role_policy" "ecs_db_secret_access" {
+-  name = "database-secrets"
+-
+-  role = aws_iam_role.ecs_task_execution.id
+-
+-  policy = data.aws_iam_policy_document.ecs_db_secret_access.json
+-}
+-
+-############ Bootstrap SQL ############
+-
+-locals {
+-  db_bootstrap_command = <<-EOT
+-    set -eu
+-
+-    echo "Bootstrapping production PostgreSQL"
+-
+-    export PGPASSWORD="$MASTER_PASSWORD"
+-
+-    psql \
+-      "host=$DB_HOST port=$DB_PORT dbname=$TRANSPORT_DB_NAME user=$MASTER_USERNAME sslmode=require" \
+-      --set=transport_password="$TRANSPORT_PASSWORD" \
+-      --set=audit_password="$AUDIT_PASSWORD" \
+-      --set=debezium_password="$DEBEZIUM_PASSWORD" \
+-      --set=transport_db="$TRANSPORT_DB_NAME" \
+-      --set=audit_db="$AUDIT_DB_NAME" <<'SQL'
+-
+-    \set ON_ERROR_STOP on
+-
+-    SELECT format(
+-      'CREATE ROLE transport_app LOGIN PASSWORD %L',
+-      :'transport_password'
+-    )
+-    WHERE NOT EXISTS (
+-      SELECT 1
+-      FROM pg_roles
+-      WHERE rolname = 'transport_app'
+-    )
+-    \gexec
+-
+-    ALTER ROLE transport_app
+-      LOGIN
+-      PASSWORD :'transport_password';
+-
+-    SELECT format(
+-      'CREATE ROLE audit_app LOGIN PASSWORD %L',
+-      :'audit_password'
+-    )
+-    WHERE NOT EXISTS (
+-      SELECT 1
+-      FROM pg_roles
+-      WHERE rolname = 'audit_app'
+-    )
+-    \gexec
+-
+-    ALTER ROLE audit_app
+-      LOGIN
+-      PASSWORD :'audit_password';
+-
+-    SELECT format(
+-      'CREATE ROLE debezium LOGIN PASSWORD %L',
+-      :'debezium_password'
+-    )
+-    WHERE NOT EXISTS (
+-      SELECT 1
+-      FROM pg_roles
+-      WHERE rolname = 'debezium'
+-    )
+-    \gexec
+-
+-    ALTER ROLE debezium
+-      LOGIN
+-      PASSWORD :'debezium_password';
+-
+-    GRANT rds_replication TO debezium;
+-
+-    ALTER DATABASE :"transport_db"
+-      OWNER TO transport_app;
+-
+-    GRANT CONNECT
+-      ON DATABASE :"transport_db"
+-      TO transport_app, debezium;
+-
+-    SELECT format(
+-      'CREATE DATABASE %I OWNER audit_app',
+-      :'audit_db'
+-    )
+-    WHERE NOT EXISTS (
+-      SELECT 1
+-      FROM pg_database
+-      WHERE datname = :'audit_db'
+-    )
+-    \gexec
+-
+-    ALTER DATABASE :"audit_db"
+-      OWNER TO audit_app;
+-
+-    GRANT CONNECT
+-      ON DATABASE :"audit_db"
+-      TO audit_app;
+-
+-    SQL
+-
+-    echo "Configuring transport database permissions"
+-
+-    export PGPASSWORD="$TRANSPORT_PASSWORD"
+-
+-    psql \
+-      "host=$DB_HOST port=$DB_PORT dbname=$TRANSPORT_DB_NAME user=transport_app sslmode=require" <<'SQL'
+-
+-    \set ON_ERROR_STOP on
+-
+-    REVOKE CREATE
+-      ON SCHEMA public
+-      FROM PUBLIC;
+-
+-    GRANT USAGE, CREATE
+-      ON SCHEMA public
+-      TO transport_app;
+-
+-    GRANT USAGE
+-      ON SCHEMA public
+-      TO debezium;
+-
+-    SQL
+-
+-    echo "Configuring audit database permissions"
+-
+-    export PGPASSWORD="$AUDIT_PASSWORD"
+-
+-    psql \
+-      "host=$DB_HOST port=$DB_PORT dbname=$AUDIT_DB_NAME user=audit_app sslmode=require" <<'SQL'
+-
+-    \set ON_ERROR_STOP on
+-
+-    REVOKE CREATE
+-      ON SCHEMA public
+-      FROM PUBLIC;
+-
+-    GRANT USAGE, CREATE
+-      ON SCHEMA public
+-      TO audit_app;
+-
+-    SQL
+-
+-    echo "Production database bootstrap completed"
+-  EOT
+-}
+-
+-############ One-off Bootstrap Task ############
+-
+-resource "aws_ecs_task_definition" "db_bootstrap" {
+-  family = "${var.project_name}-${var.environment}-db-bootstrap"
+-
+-  requires_compatibilities = [
+-    "FARGATE"
+-  ]
+-
+-  network_mode = "awsvpc"
+-
+-  cpu    = 256
+-  memory = 512
+-
+-  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+-
+-  runtime_platform {
+-    operating_system_family = "LINUX"
+-    cpu_architecture        = "X86_64"
+-  }
+-
+-  container_definitions = jsonencode([
+-    {
+-      name = "db-bootstrap"
+-
+-      image = "postgres:17.11-alpine"
+-
+-      essential = true
+-
+-      entryPoint = [
+-        "/bin/sh",
+-        "-c"
+-      ]
+-
+-      command = [
+-        local.db_bootstrap_command
+-      ]
+-
+-      environment = [
+-        {
+-          name  = "DB_HOST"
+-          value = aws_db_instance.postgres.address
+-        },
+-        {
+-          name  = "DB_PORT"
+-          value = tostring(aws_db_instance.postgres.port)
+-        },
+-        {
+-          name  = "TRANSPORT_DB_NAME"
+-          value = var.db_name
+-        },
+-        {
+-          name  = "AUDIT_DB_NAME"
+-          value = var.audit_db_name
+-        }
+-      ]
+-
+-      secrets = [
+-        {
+-          name      = "MASTER_USERNAME"
+-          valueFrom = "${aws_db_instance.postgres.master_user_secret[0].secret_arn}:username::"
+-        },
+-        {
+-          name      = "MASTER_PASSWORD"
+-          valueFrom = "${aws_db_instance.postgres.master_user_secret[0].secret_arn}:password::"
+-        },
+-        {
+-          name      = "TRANSPORT_PASSWORD"
+-          valueFrom = "${aws_secretsmanager_secret.transport_db_app.arn}:password::"
+-        },
+-        {
+-          name      = "AUDIT_PASSWORD"
+-          valueFrom = "${aws_secretsmanager_secret.audit_db_app.arn}:password::"
+-        },
+-        {
+-          name      = "DEBEZIUM_PASSWORD"
+-          valueFrom = "${aws_secretsmanager_secret.debezium_db.arn}:password::"
+-        }
+-      ]
+-
+-      logConfiguration = {
+-        logDriver = "awslogs"
+-
+-        options = {
+-          awslogs-group         = aws_cloudwatch_log_group.db_bootstrap.name
+-          awslogs-region        = var.aws_region
+-          awslogs-stream-prefix = "bootstrap"
+-        }
+-      }
+-    }
+-  ])
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-db-bootstrap"
+-  }
+-}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/prod/ec2-iam.tf b/infrastructure/terraform/prod/ec2-iam.tf
+new file mode 100644
+index 0000000..c91e84c
+--- /dev/null
++++ b/infrastructure/terraform/prod/ec2-iam.tf
+@@ -0,0 +1,63 @@
++# Both application containers use the instance profile for IAM authentication.
++# With one EC2 host, these permissions are shared by both services.
++locals {
++  audit_source_topics = [
++    "transport.public.transport",
++    "transport.public.job",
++    "transport.public.container"
++  ]
++
++  audit_dlt_topics = [for topic in local.audit_source_topics : "${topic}.dlt"]
++  audit_all_topics = concat(local.audit_source_topics, local.audit_dlt_topics)
++}
++
++data "aws_iam_policy_document" "app_access" {
++  statement {
++    sid     = "ReadApplicationDatabaseSecrets"
++    effect  = "Allow"
++    actions = ["secretsmanager:GetSecretValue"]
++    resources = [
++      aws_secretsmanager_secret.transport_db_app.arn,
++      aws_secretsmanager_secret.audit_db_app.arn,
++      aws_secretsmanager_secret.debezium_db.arn,
++      aws_db_instance.postgres.master_user_secret[0].secret_arn
++    ]
++  }
++
++  statement {
++    sid     = "ConnectToMSK"
++    effect  = "Allow"
++    actions = ["kafka-cluster:Connect", "kafka-cluster:DescribeCluster", "kafka-cluster:WriteDataIdempotently"]
++    resources = [aws_msk_serverless_cluster.main.arn]
++  }
++
++  statement {
++    sid     = "ReadKafkaTopics"
++    effect  = "Allow"
++    actions = ["kafka-cluster:DescribeTopic", "kafka-cluster:ReadData"]
++    resources = [for topic in local.audit_all_topics : "${local.msk_topic_arn_prefix}/${topic}"]
++  }
++
++  statement {
++    sid     = "CreateAndWriteDeadLetterTopics"
++    effect  = "Allow"
++    actions = ["kafka-cluster:CreateTopic", "kafka-cluster:DescribeTopic", "kafka-cluster:WriteData"]
++    resources = [for topic in local.audit_dlt_topics : "${local.msk_topic_arn_prefix}/${topic}"]
++  }
++
++  statement {
++    sid     = "KafkaConsumerGroups"
++    effect  = "Allow"
++    actions = ["kafka-cluster:DescribeGroup", "kafka-cluster:AlterGroup"]
++    resources = [
++      "${local.msk_group_arn_prefix}/audit-consumer",
++      "${local.msk_group_arn_prefix}/audit-dlt-replay"
++    ]
++  }
++}
++
++resource "aws_iam_role_policy" "app_access" {
++  name   = "production-app-access"
++  role   = module.app_ec2.role_name
++  policy = data.aws_iam_policy_document.app_access.json
++}
+diff --git a/infrastructure/terraform/prod/ec2.tf b/infrastructure/terraform/prod/ec2.tf
+new file mode 100644
+index 0000000..d0b5810
+--- /dev/null
++++ b/infrastructure/terraform/prod/ec2.tf
+@@ -0,0 +1,32 @@
++# One small Docker host for both application containers.
++# No public application ingress is opened in Phase 3; use SSM to administer it.
++resource "aws_security_group" "app_ec2" {
++  name        = "${var.project_name}-${var.environment}-app-ec2"
++  description = "Production Docker application host"
++  vpc_id      = aws_vpc.main.id
++
++  tags = {
++    Name = "${var.project_name}-${var.environment}-app-ec2"
++  }
++}
++
++resource "aws_vpc_security_group_egress_rule" "app_ec2_outbound" {
++  security_group_id = aws_security_group.app_ec2.id
++  description       = "Allow outbound for image pulls, AWS APIs, RDS and MSK"
++  ip_protocol       = "-1"
++  cidr_ipv4         = "0.0.0.0/0"
++}
++
++module "app_ec2" {
++  source = "../modules/app-ec2"
++
++  project_name     = var.project_name
++  environment      = var.environment
++  aws_region       = var.aws_region
++  aws_account_id   = var.aws_account_id
++  instance_type    = var.app_instance_type
++  root_volume_size = var.app_root_volume_size
++
++  subnet_id          = aws_subnet.public[0].id
++  security_group_ids = [aws_security_group.app_ec2.id]
++}
+diff --git a/infrastructure/terraform/prod/ecs.tf b/infrastructure/terraform/prod/ecs.tf
+deleted file mode 100644
+index 7c08bec..0000000
+--- a/infrastructure/terraform/prod/ecs.tf
++++ /dev/null
+@@ -1,213 +0,0 @@
+-############ ECS Cluster ############
+-
+-resource "aws_ecs_cluster" "main" {
+-  name = "${var.project_name}-${var.environment}"
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-ecs"
+-  }
+-}
+-
+-############ CloudWatch Logs ############
+-
+-resource "aws_cloudwatch_log_group" "transport" {
+-  name = "/ecs/${var.project_name}/${var.environment}/transport-service"
+-
+-  retention_in_days = 14
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-transport-logs"
+-  }
+-}
+-
+-############ ECS Task Execution Role ############
+-
+-data "aws_iam_policy_document" "ecs_task_execution_assume_role" {
+-  statement {
+-    effect = "Allow"
+-
+-    actions = [
+-      "sts:AssumeRole"
+-    ]
+-
+-    principals {
+-      type = "Service"
+-
+-      identifiers = [
+-        "ecs-tasks.amazonaws.com"
+-      ]
+-    }
+-  }
+-}
+-
+-resource "aws_iam_role" "ecs_task_execution" {
+-  name = "${var.project_name}-${var.environment}-ecs-execution"
+-
+-  assume_role_policy = data.aws_iam_policy_document.ecs_task_execution_assume_role.json
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-ecs-execution"
+-  }
+-}
+-
+-resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
+-  role = aws_iam_role.ecs_task_execution.name
+-
+-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+-}
+-
+-############ Transport Task Definition ############
+-
+-resource "aws_ecs_task_definition" "transport" {
+-  family = "${var.project_name}-${var.environment}-transport-service"
+-
+-  requires_compatibilities = [
+-    "FARGATE"
+-  ]
+-
+-  network_mode = "awsvpc"
+-
+-  cpu    = var.transport_task_cpu
+-  memory = var.transport_task_memory
+-
+-  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+-
+-  runtime_platform {
+-    operating_system_family = "LINUX"
+-    cpu_architecture        = "X86_64"
+-  }
+-
+-  container_definitions = jsonencode([
+-    {
+-      name = "transport-service"
+-
+-      # Terraform creates the ECS infrastructure before the first real
+-      # production release exists. GitHub Actions replaces this image
+-      # before scaling the service above zero.
+-      image = "${aws_ecr_repository.app["transport_service"].repository_url}:bootstrap"
+-
+-      essential = true
+-
+-      portMappings = [
+-        {
+-          containerPort = var.transport_container_port
+-          protocol      = "tcp"
+-        }
+-      ]
+-
+-      environment = [
+-        {
+-          name  = "SERVER_PORT"
+-          value = tostring(var.transport_container_port)
+-        },
+-        {
+-          name  = "DB_HOST"
+-          value = aws_db_instance.postgres.address
+-        },
+-        {
+-          name  = "DB_PORT"
+-          value = tostring(aws_db_instance.postgres.port)
+-        },
+-        {
+-          name  = "DB_NAME"
+-          value = var.db_name
+-        },
+-        {
+-          name  = "TRANSPORT_DB_MAX_POOL_SIZE"
+-          value = "10"
+-        },
+-        {
+-          name  = "TRANSPORT_DB_MIN_IDLE"
+-          value = "2"
+-        },
+-        {
+-          name  = "TRANSPORT_DB_CONNECTION_TIMEOUT_MS"
+-          value = "30000"
+-        }
+-      ]
+-
+-      secrets = [
+-        {
+-          name      = "DB_USERNAME"
+-          valueFrom = "${aws_secretsmanager_secret.transport_db_app.arn}:username::"
+-        },
+-        {
+-          name      = "DB_PASSWORD"
+-          valueFrom = "${aws_secretsmanager_secret.transport_db_app.arn}:password::"
+-        }
+-      ]
+-
+-      logConfiguration = {
+-        logDriver = "awslogs"
+-
+-        options = {
+-          awslogs-group         = aws_cloudwatch_log_group.transport.name
+-          awslogs-region        = var.aws_region
+-          awslogs-stream-prefix = "transport"
+-        }
+-      }
+-    }
+-  ])
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-transport-service"
+-  }
+-}
+-
+-############ Transport ECS Service ############
+-
+-resource "aws_ecs_service" "transport" {
+-  name = "transport-service"
+-
+-  cluster         = aws_ecs_cluster.main.id
+-  task_definition = aws_ecs_task_definition.transport.arn
+-
+-  # Keep the service at zero until release.yml deploys a real image.
+-  desired_count = 0
+-
+-  launch_type = "FARGATE"
+-
+-  network_configuration {
+-    subnets = aws_subnet.app[*].id
+-
+-    security_groups = [
+-      aws_security_group.transport_ecs.id
+-    ]
+-
+-    assign_public_ip = false
+-  }
+-
+-  load_balancer {
+-    target_group_arn = aws_lb_target_group.transport.arn
+-    container_name   = "transport-service"
+-    container_port   = var.transport_container_port
+-  }
+-
+-  health_check_grace_period_seconds = 60
+-
+-  deployment_minimum_healthy_percent = 100
+-  deployment_maximum_percent         = 200
+-
+-  deployment_circuit_breaker {
+-    enable   = true
+-    rollback = true
+-  }
+-
+-  enable_ecs_managed_tags = true
+-
+-  lifecycle {
+-    # GitHub Actions owns application releases and scaling.
+-    ignore_changes = [
+-      task_definition,
+-      desired_count
+-    ]
+-  }
+-
+-  depends_on = [
+-    aws_lb_listener.http
+-  ]
+-
+-  tags = {
+-    Name = "${var.project_name}-${var.environment}-transport-service"
+-  }
+-}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/prod/msk-connect.tf b/infrastructure/terraform/prod/msk-connect.tf
+index ab41687..fbd706b 100644
+--- a/infrastructure/terraform/prod/msk-connect.tf
++++ b/infrastructure/terraform/prod/msk-connect.tf
+@@ -21,24 +21,27 @@ locals {
+ }
+ 
+ data "aws_s3_bucket" "msk_connect_plugins" {
++  count  = var.enable_msk_connect ? 1 : 0
+   bucket = local.msk_connect_plugin_bucket_name
+ }
+ 
+ data "aws_s3_object" "debezium_plugin" {
++  count  = var.enable_msk_connect ? 1 : 0
+   bucket = local.msk_connect_plugin_bucket_name
+   key    = local.msk_connect_plugin_key
+ }
+ 
+ resource "aws_mskconnect_custom_plugin" "debezium_postgres" {
+-  name = "${var.project_name}-${var.environment}-debezium-postgres-${replace(local.debezium_version, ".", "-")}"
++  count = var.enable_msk_connect ? 1 : 0
++  name  = "${var.project_name}-${var.environment}-debezium-postgres-${replace(local.debezium_version, ".", "-")}"
+ 
+   content_type = "ZIP"
+ 
+   location {
+     s3 {
+-      bucket_arn     = data.aws_s3_bucket.msk_connect_plugins.arn
++      bucket_arn     = data.aws_s3_bucket.msk_connect_plugins[0].arn
+       file_key       = local.msk_connect_plugin_key
+-      object_version = data.aws_s3_object.debezium_plugin.version_id
++      object_version = data.aws_s3_object.debezium_plugin[0].version_id
+     }
+   }
+ }
+@@ -275,8 +278,8 @@ resource "aws_mskconnect_connector" "transport_cdc" {
+ 
+   plugin {
+     custom_plugin {
+-      arn      = aws_mskconnect_custom_plugin.debezium_postgres.arn
+-      revision = aws_mskconnect_custom_plugin.debezium_postgres.latest_revision
++      arn      = aws_mskconnect_custom_plugin.debezium_postgres[0].arn
++      revision = aws_mskconnect_custom_plugin.debezium_postgres[0].latest_revision
+     }
+   }
+ 
+@@ -285,6 +288,9 @@ resource "aws_mskconnect_connector" "transport_cdc" {
+     revision = aws_mskconnect_worker_configuration.debezium.latest_revision
+   }
+ 
++  # NAT is provisioned when enabling MSK Connect; ensure the private route exists first.
++  depends_on = [aws_route.app_internet]
++
+   service_execution_role_arn = aws_iam_role.msk_connect.arn
+ 
+   log_delivery {
+diff --git a/infrastructure/terraform/prod/msk.tf b/infrastructure/terraform/prod/msk.tf
+index 356b792..2d00353 100644
+--- a/infrastructure/terraform/prod/msk.tf
++++ b/infrastructure/terraform/prod/msk.tf
+@@ -32,6 +32,15 @@ resource "aws_vpc_security_group_ingress_rule" "msk_from_clients" {
+   to_port     = 9098
+ }
+ 
++resource "aws_vpc_security_group_ingress_rule" "msk_from_app_ec2" {
++  security_group_id            = aws_security_group.msk.id
++  referenced_security_group_id = aws_security_group.app_ec2.id
++  description                  = "Allow production Docker host to connect over IAM TLS"
++  ip_protocol                  = "tcp"
++  from_port                    = 9098
++  to_port                      = 9098
++}
++
+ resource "aws_vpc_security_group_egress_rule" "msk_outbound" {
+   security_group_id = aws_security_group.msk.id
+ 
+diff --git a/infrastructure/terraform/prod/network.tf b/infrastructure/terraform/prod/network.tf
+index 7c8eb28..3f33371 100644
+--- a/infrastructure/terraform/prod/network.tf
++++ b/infrastructure/terraform/prod/network.tf
+@@ -122,6 +122,7 @@ resource "aws_route_table_association" "public" {
+ ############ NAT Gateway ############
+ 
+ resource "aws_eip" "nat" {
++  count  = var.enable_msk_connect ? 1 : 0
+   domain = "vpc"
+ 
+   tags = {
+@@ -130,7 +131,9 @@ resource "aws_eip" "nat" {
+ }
+ 
+ resource "aws_nat_gateway" "main" {
+-  allocation_id = aws_eip.nat.id
++  count = var.enable_msk_connect ? 1 : 0
++
++  allocation_id = aws_eip.nat[0].id
+ 
+   subnet_id = aws_subnet.public[0].id
+ 
+@@ -144,8 +147,8 @@ resource "aws_nat_gateway" "main" {
+ }
+ 
+ ############ Application Private Route Table ############
+-# ECS -> private app subnet -> NAT -> internet
+-# internet can't initiate directly connection to ECS
++# Private MSK Connect workers -> NAT -> AWS APIs (Secrets Manager).
++# This NAT gateway is a fixed monthly cost; review after CDC is working.
+ resource "aws_route_table" "app" {
+   vpc_id = aws_vpc.main.id
+ 
+@@ -155,11 +158,13 @@ resource "aws_route_table" "app" {
+ }
+ 
+ resource "aws_route" "app_internet" {
++  count = var.enable_msk_connect ? 1 : 0
++
+   route_table_id = aws_route_table.app.id
+ 
+   destination_cidr_block = "0.0.0.0/0"
+ 
+-  nat_gateway_id = aws_nat_gateway.main.id
++  nat_gateway_id = aws_nat_gateway.main[0].id
+ }
+ 
+ resource "aws_route_table_association" "app" {
+diff --git a/infrastructure/terraform/prod/outputs.tf b/infrastructure/terraform/prod/outputs.tf
+index e74972d..8aa5939 100644
+--- a/infrastructure/terraform/prod/outputs.tf
++++ b/infrastructure/terraform/prod/outputs.tf
+@@ -27,12 +27,12 @@ output "database_subnet_ids" {
+ 
+ output "nat_gateway_id" {
+   description = "NAT Gateway used by application subnets."
+-  value       = aws_nat_gateway.main.id
++  value       = try(aws_nat_gateway.main[0].id, null)
+ }
+ 
+ output "nat_public_ip" {
+   description = "Public Elastic IP used by the NAT Gateway."
+-  value       = aws_eip.nat.public_ip
++  value       = try(aws_eip.nat[0].public_ip, null)
+ }
+ 
+ ############ ECR Outputs ############
+@@ -87,40 +87,16 @@ output "rds_master_secret_arn" {
+   sensitive = true
+ }
+ 
+-############ ALB & ECS Outputs ############
+-output "alb_dns_name" {
+-  description = "Public DNS name of the transport-service ALB."
+-  value       = aws_lb.transport.dns_name
+-}
+-
+-output "alb_url" {
+-  description = "HTTP URL for the transport-service ALB."
+-  value       = "http://${aws_lb.transport.dns_name}"
+-}
+-
+-output "ecs_cluster_name" {
+-  description = "ECS cluster name."
+-  value       = aws_ecs_cluster.main.name
+-}
+-
+-output "transport_ecs_service_name" {
+-  description = "transport-service ECS service name."
+-  value       = aws_ecs_service.transport.name
+-}
+-
+-output "transport_task_definition_family" {
+-  description = "transport-service task definition family."
+-  value       = aws_ecs_task_definition.transport.family
+-}
++############ Application EC2 Outputs ############
+ 
+-output "transport_ecs_security_group_id" {
+-  description = "Security group used by transport-service ECS tasks."
+-  value       = aws_security_group.transport_ecs.id
++output "app_instance_id" {
++  description = "Production application EC2 instance ID (use AWS SSM)."
++  value       = module.app_ec2.instance_id
+ }
+ 
+-output "alb_security_group_id" {
+-  description = "Security group used by the public ALB."
+-  value       = aws_security_group.alb.id
++output "app_public_ip" {
++  description = "Public IP of the app host. No public ingress is enabled yet."
++  value       = module.app_ec2.public_ip
+ }
+ 
+ ############ Database Bootstrap Outputs ############
+@@ -140,21 +116,6 @@ output "debezium_db_secret_arn" {
+   value       = aws_secretsmanager_secret.debezium_db.arn
+ }
+ 
+-output "db_bootstrap_task_definition_arn" {
+-  description = "ECS task definition used for one-off database bootstrap."
+-  value       = aws_ecs_task_definition.db_bootstrap.arn
+-}
+-
+-output "db_bootstrap_security_group_id" {
+-  description = "Security group used by the database bootstrap task."
+-  value       = aws_security_group.db_bootstrap.id
+-}
+-
+-output "db_bootstrap_log_group_name" {
+-  description = "CloudWatch log group for database bootstrap."
+-  value       = aws_cloudwatch_log_group.db_bootstrap.name
+-}
+-
+ ############ MSK Outputs ############
+ 
+ output "msk_cluster_arn" {
+@@ -176,25 +137,3 @@ output "msk_client_security_group_id" {
+   description = "Security group to attach to applications that connect to MSK."
+   value       = aws_security_group.msk_client.id
+ }
+-
+-############ Audit Consumer Outputs ############
+-
+-output "audit_ecs_service_name" {
+-  description = "Audit consumer ECS service name."
+-  value       = aws_ecs_service.audit.name
+-}
+-
+-output "audit_task_definition_family" {
+-  description = "Audit consumer task definition family."
+-  value       = aws_ecs_task_definition.audit.family
+-}
+-
+-output "audit_task_role_arn" {
+-  description = "IAM task role used by audit-consumer."
+-  value       = aws_iam_role.audit_task.arn
+-}
+-
+-output "audit_log_group_name" {
+-  description = "CloudWatch log group for audit-consumer."
+-  value       = aws_cloudwatch_log_group.audit.name
+-}
+\ No newline at end of file
+diff --git a/infrastructure/terraform/prod/rds.tf b/infrastructure/terraform/prod/rds.tf
+index 717c7e2..233fbd6 100644
+--- a/infrastructure/terraform/prod/rds.tf
++++ b/infrastructure/terraform/prod/rds.tf
+@@ -119,24 +119,12 @@ resource "aws_db_instance" "postgres" {
+ 
+ ############ RDS Access ############
+ 
+-resource "aws_vpc_security_group_ingress_rule" "rds_from_transport" {
++resource "aws_vpc_security_group_ingress_rule" "rds_from_app_ec2" {
+   security_group_id = aws_security_group.rds.id
+ 
+-  referenced_security_group_id = aws_security_group.transport_ecs.id
++  referenced_security_group_id = aws_security_group.app_ec2.id
+ 
+-  description = "Allow PostgreSQL from transport-service"
+-
+-  ip_protocol = "tcp"
+-  from_port   = 5432
+-  to_port     = 5432
+-}
+-
+-resource "aws_vpc_security_group_ingress_rule" "rds_from_bootstrap" {
+-  security_group_id = aws_security_group.rds.id
+-
+-  referenced_security_group_id = aws_security_group.db_bootstrap.id
+-
+-  description = "Allow PostgreSQL from database bootstrap task"
++  description = "Allow PostgreSQL from application Docker host"
+ 
+   ip_protocol = "tcp"
+   from_port   = 5432
+diff --git a/infrastructure/terraform/prod/terraform.tfvars.example b/infrastructure/terraform/prod/terraform.tfvars.example
+index bb448c3..e37044f 100644
+--- a/infrastructure/terraform/prod/terraform.tfvars.example
++++ b/infrastructure/terraform/prod/terraform.tfvars.example
+@@ -1,19 +1,21 @@
+-project_name = "cdc-kafka"
+-environment  = "prod"
+-aws_region   = "ap-southeast-1"
++project_name   = "cdc-kafka"
++environment    = "prod"
++aws_region     = "ap-southeast-1"
++aws_account_id = "123456789012" # Production AWS account ID
++vpc_cidr       = "10.20.0.0/16"
+ 
+-aws_account_id = "123456789012" # replace real AWS account ID
+-vpc_cidr = "10.20.0.0/16"
++# One EC2 for transport-service and audit-consumer.
++app_instance_type    = "t3a.large"
++app_root_volume_size = 30
+ 
+-db_name            = "transport"
+-db_master_username = "cdc_admin"
+-db_instance_class = "db.t4g.micro"
++# One private PostgreSQL RDS instance with transport + audit databases.
++db_name                  = "transport"
++audit_db_name            = "audit"
++db_master_username       = "cdc_admin"
++db_instance_class        = "db.t4g.small"
+ db_allocated_storage     = 20
+ db_max_allocated_storage = 100
+-db_multi_az = false
++db_multi_az              = false
+ 
+-transport_container_port = 8080
+-transport_task_cpu    = 512
+-transport_task_memory = 1024
+-# Keep zero until DB bootstrap + CD are ready.
+-transport_desired_count = 0
+\ No newline at end of file
++# Enable after the database and Debezium plugin are initialized.
++enable_msk_connect = false
+diff --git a/infrastructure/terraform/prod/variables.tf b/infrastructure/terraform/prod/variables.tf
+index 3161a3b..efc0221 100644
+--- a/infrastructure/terraform/prod/variables.tf
++++ b/infrastructure/terraform/prod/variables.tf
+@@ -79,38 +79,22 @@ variable "db_multi_az" {
+   default     = false
+ }
+ 
+-############ ECS ############
+-variable "transport_container_port" {
+-  description = "Port exposed by transport-service."
+-  type        = number
+-  default     = 8080
+-}
+-
+-variable "transport_task_cpu" {
+-  description = "Fargate CPU units for transport-service."
+-  type        = number
+-  default     = 512
+-}
++############ Application EC2 ############
+ 
+-variable "transport_task_memory" {
+-  description = "Fargate memory in MiB for transport-service."
+-  type        = number
+-  default     = 1024
++variable "app_instance_type" {
++  description = "Production Docker host; larger than the DEV instance."
++  type        = string
++  default     = "t3a.large"
+ }
+ 
+-variable "transport_desired_count" {
+-  description = "Number of transport-service ECS tasks."
++variable "app_root_volume_size" {
++  description = "Encrypted gp3 root volume size in GiB."
+   type        = number
+-  default     = 0
++  default     = 30
+ }
+ 
+ variable "enable_msk_connect" {
+-  description = "Start Debezium only after database bootstrap and migrations."
++  description = "Enable only after database roles, schema and Debezium plugin are ready."
+   type        = bool
+   default     = false
+ }
+-
+-variable "prod_allowed_cidr" {
+-  description = "Trusted CIDR allowed to reach the temporary production HTTP endpoint."
+-  type        = string
+-}
+\ No newline at end of file

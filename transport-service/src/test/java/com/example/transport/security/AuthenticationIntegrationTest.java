@@ -57,6 +57,7 @@ class AuthenticationIntegrationTest {
 
     @DynamicPropertySource
     static void keys(DynamicPropertyRegistry registry) throws Exception {
+        TestRedis.properties(registry);
         keys = Files.createTempDirectory("auth-test-keys");
         keys.toFile().deleteOnExit();
         var generator = KeyPairGenerator.getInstance("RSA");
@@ -263,7 +264,7 @@ class AuthenticationIntegrationTest {
     String signed(String issuer, String audience, Instant expiry, JwsAlgorithm algorithm) {
         var claims =
                 JwtClaimsSet.builder()
-                        .claim("auth_version", user.getAuthVersion())
+                        .id(UUID.randomUUID().toString())
                         .subject(user.getId().toString())
                         .issuer(issuer)
                         .audience(List.of(audience))
@@ -282,8 +283,7 @@ class AuthenticationIntegrationTest {
                 tokens.generateToken(
                         user.getId().toString(),
                         "user",
-                        List.of("ROLE_USER"),
-                        user.getAuthVersion());
+                        List.of("ROLE_USER")).getTokenValue();
         var parts = valid.split("\\.");
         byte[] signature = Base64.getUrlDecoder().decode(parts[2]);
         signature[0] ^= 1;
@@ -328,7 +328,7 @@ class AuthenticationIntegrationTest {
         for (boolean missingExpiry : List.of(true, false)) {
             var builder =
                     JwtClaimsSet.builder()
-                            .claim("auth_version", user.getAuthVersion())
+                            .id(UUID.randomUUID().toString())
                             .issuer("https://auth.test")
                             .audience(List.of("transport-test"))
                             .subject(missingExpiry ? user.getId().toString() : "not-a-user-id")

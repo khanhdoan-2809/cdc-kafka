@@ -33,10 +33,8 @@ public class JwtService {
         this.ttl = ttl;
     }
 
-    public String generateToken(
-            String accountId, String username, List<String> roles, long authVersion) {
-        if (authVersion < 0) throw new IllegalArgumentException("Invalid authentication version");
-        Instant now = Instant.now();
+    public Jwt generateToken(String accountId, String username, List<String> roles) {
+        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         var claims =
                 JwtClaimsSet.builder()
                         .subject(accountId)
@@ -44,7 +42,6 @@ public class JwtService {
                         .issuer(issuer)
                         .audience(List.of(audience))
                         .claim("roles", roles)
-                        .claim("auth_version", authVersion)
                         .id(UUID.randomUUID().toString())
                         .issuedAt(now)
                         .notBefore(now)
@@ -52,8 +49,7 @@ public class JwtService {
                         .build();
         return encoder.encode(
                         JwtEncoderParameters.from(
-                                JwsHeader.with(SignatureAlgorithm.RS256).build(), claims))
-                .getTokenValue();
+                                JwsHeader.with(SignatureAlgorithm.RS256).build(), claims));
     }
 
     public long expiresIn() {

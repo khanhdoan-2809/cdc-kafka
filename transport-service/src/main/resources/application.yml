@@ -1,4 +1,15 @@
 spring:
+  config:
+    import: optional:configtree:/run/secrets/
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:${redis-password:}}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:1s}
+      timeout: ${REDIS_COMMAND_TIMEOUT:1s}
+      repositories:
+        enabled: false
   application:
     name: transport
 
@@ -83,6 +94,11 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db,redis
+        liveness:
+          include: livenessState
 
   metrics:
     distribution:

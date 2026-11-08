@@ -15,9 +15,11 @@ The initialization script generates a fresh 3072-bit RSA pair and random initial
 
 `POST /api/auth/login` accepts JSON `username` and `password`, without `X-User-Id`. The response contains `accessToken`, `tokenType: Bearer`, and `expiresIn` in seconds. Send `Authorization: Bearer <accessToken>` to the API. Do not send passwords or tokens over public HTTP; production requires HTTPS ingress. Avoid shell tracing when working with credentials.
 
-Accounts are persisted in `auth_user` by Flyway V4. Passwords use BCrypt cost 12. The bootstrap username/password create an ADMIN only when the account table is empty; they never reset an existing account. There is no registration or user administration API in this change. Provision subsequent accounts through a controlled database administration process using generated UUIDs, BCrypt hashes and role `ADMIN` or `USER`; never store plaintext passwords. Username matching is case-sensitive. Bootstrap usernames accept 1-100 ASCII letters, digits, `.`, `_`, `@`, `-`; bootstrap passwords require at least 12 characters and at most 72 UTF-8 bytes. Remove bootstrap credentials from configuration after first provisioning and supply explicit smoke credentials thereafter.
+Accounts are persisted in `auth_user` by Flyway V4. Passwords use BCrypt cost 12. The bootstrap username/password/email create an unverified ADMIN only when the account table is empty; they never reset an existing account. Public registration and verification APIs are documented in [registration setup and migration](docs/registration.md); signup is disabled by default. User administration remains a later task. Provision subsequent accounts through a controlled database administration process using generated UUIDs, BCrypt hashes and role `ADMIN` or `USER`; never store plaintext passwords. Username matching is case-sensitive. Bootstrap usernames accept 1-100 ASCII letters, digits, `.`, `_`, `@`, `-`; bootstrap passwords require at least 15 characters and at most 72 UTF-8 bytes. Remove bootstrap credentials from configuration after first provisioning and supply explicit smoke credentials thereafter.
 
 JWT subjects are immutable account UUIDs. Username is a separate claim. Existing `ROLE_ADMIN` / `ROLE_USER` authorities are preserved. USER can read only assigned transports and their active jobs/containers; ADMIN can manage all active records. See [authorization and DEV assignment setup](docs/authorization.md).
+
+Login now requires a verified email, including for existing accounts and the bootstrap administrator. Complete the [explicit email backfill and verification rollout](docs/registration.md) before relying on new logins. A fresh DEV administrator receives its verification code in the local Mailpit inbox.
 
 ## Runtime configuration
 
@@ -28,7 +30,11 @@ JWT subjects are immutable account UUIDs. Username is a separate claim. Existing
 | `JWT_ISSUER` | Required issuer, validated on every bearer token |
 | `JWT_AUDIENCE` | Required audience, validated on every bearer token |
 | `JWT_TTL` | ISO-8601 duration; default `PT15M`, allowed 1 second to 1 hour |
-| `AUTH_BOOTSTRAP_USERNAME`, `AUTH_BOOTSTRAP_PASSWORD` | Optional one-time initial ADMIN provisioning |
+| `AUTH_BOOTSTRAP_USERNAME`, `AUTH_BOOTSTRAP_PASSWORD`, `AUTH_BOOTSTRAP_EMAIL` | Optional one-time initial unverified ADMIN provisioning |
+| `AUTH_REGISTRATION_ENABLED` | Public signup feature flag; default false |
+| `AUTH_REGISTRATION_MAX_ATTEMPTS` | Shared register/verify/resend limit per peer IP per login window; default 10 |
+| `AUTH_VERIFICATION_FROM` | Verification sender; required explicitly in production |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Verification email delivery; see registration guide |
 | `MONITORING_PASSWORD` | Required dedicated monitoring password, 12 characters to 72 UTF-8 bytes |
 | `AUTH_LOGIN_MAX_ATTEMPTS` | Login attempts per peer IP per window; default 10 |
 | `AUTH_LOGIN_WINDOW` | ISO-8601 window duration; default `PT1M` |

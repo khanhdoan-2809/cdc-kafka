@@ -13,14 +13,23 @@ class AccountBootstrapTest {
     void createsOnlyFirstAccountAndHashesPassword() {
         var accounts = mock(AccountRepository.class);
         var encoder = new BCryptPasswordEncoder(4);
+        var verification = mock(RegistrationService.class);
         var bootstrap =
-                new AccountBootstrap(accounts, encoder, "first-admin", "bootstrap-password");
+                new AccountBootstrap(
+                        accounts,
+                        encoder,
+                        "first-admin",
+                        "bootstrap-password",
+                        "first-admin@test.invalid",
+                        verification);
         bootstrap.run(new DefaultApplicationArguments());
         var captured = ArgumentCaptor.forClass(Account.class);
         verify(accounts).saveAndFlush(captured.capture());
         assertThat(encoder.matches("bootstrap-password", captured.getValue().getPasswordHash()))
                 .isTrue();
         assertThat(captured.getValue().getRole()).isEqualTo("ADMIN");
+        assertThat(captured.getValue().isEmailVerified()).isFalse();
+        verify(verification).resend("first-admin@test.invalid");
         reset(accounts);
         when(accounts.count()).thenReturn(1L);
         bootstrap.run(new DefaultApplicationArguments());
@@ -31,12 +40,44 @@ class AccountBootstrapTest {
     void absentCredentialsDoNothingAndPartialOrWeakConfigurationFails() {
         var accounts = mock(AccountRepository.class);
         var encoder = new BCryptPasswordEncoder(4);
-        new AccountBootstrap(accounts, encoder, "", "").run(new DefaultApplicationArguments());
+        new AccountBootstrap(accounts, encoder, "", "", "", mock(RegistrationService.class))
+                .run(new DefaultApplicationArguments());
         verifyNoInteractions(accounts);
         assertThatThrownBy(
                         () ->
-                                new AccountBootstrap(accounts, encoder, "admin", "short")
+                                new AccountBootstrap(
+                                                accounts,
+                                                encoder,
+                                                "admin",
+                                                "short",
+                                                "admin@test.invalid",
+                                                mock(RegistrationService.class))
                                         .run(new DefaultApplicationArguments()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void missingEmailFailsAndExistingAccountsAreNeverBackfilledImplicitly() {
+        var accounts = mock(AccountRepository.class);
+        var encoder = new BCryptPasswordEncoder(4);
+        var verification = mock(RegistrationService.class);
+        assertThatThrownBy(
+                        () ->
+                                new AccountBootstrap(
+                                                accounts,
+                                                encoder,
+                                                "admin",
+                                                "bootstrap-password",
+                                                "",
+                                                verification)
+                                        .run(new DefaultApplicationArguments()))
+                .isInstanceOf(IllegalStateException.class);
+        verify(accounts, never()).saveAndFlush(any());
+        verifyNoInteractions(verification);
+        when(accounts.count()).thenReturn(1L);
+        new AccountBootstrap(accounts, encoder, "admin", "bootstrap-password", "", verification)
+                .run(new DefaultApplicationArguments());
+        verify(accounts, never()).saveAndFlush(any());
+        verifyNoInteractions(verification);
     }
 }

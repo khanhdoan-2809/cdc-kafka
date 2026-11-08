@@ -21,6 +21,12 @@ public class Account {
     @Column(nullable = false)
     private boolean enabled;
 
+    @Column(unique = true, length = 254)
+    private String email;
+
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified;
+
     protected Account() {}
 
     public Account(String username, String passwordHash, String role) {
@@ -31,6 +37,24 @@ public class Account {
         this.passwordHash = passwordHash;
         this.role = role;
         this.enabled = true;
+    }
+
+    public Account(String username, String passwordHash, String role, String email) {
+        this(username, passwordHash, role);
+        this.email = email;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void verifyEmail() {
+        if (email == null || email.isBlank()) throw new IllegalStateException("Email is required");
+        this.emailVerified = true;
     }
 
     public UUID getId() {

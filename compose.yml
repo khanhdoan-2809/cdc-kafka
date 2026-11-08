@@ -262,6 +262,12 @@ services:
 
     restart: "no"
 
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped
+
   transport-service:
     build:
       context: ./transport-service
@@ -271,6 +277,10 @@ services:
     volumes:
       - ./secrets/jwt:/run/secrets/jwt:ro
     environment:
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_AUTH: "false"
+      SMTP_STARTTLS_REQUIRED: "false"
       JWT_PRIVATE_KEY: file:/run/secrets/jwt/private-key.pem
       JWT_PUBLIC_KEY: file:/run/secrets/jwt/public.pem
       DB_HOST: transport-postgres

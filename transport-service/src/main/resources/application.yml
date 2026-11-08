@@ -28,6 +28,21 @@ spring:
     user: ${DB_USERNAME:transport}
     password: ${DB_PASSWORD:transport}
 
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS_REQUIRED:true}
+      mail.smtp.starttls.required: ${SMTP_STARTTLS_REQUIRED:true}
+      mail.smtp.ssl.checkserveridentity: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+      mail.debug: false
+
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
@@ -43,6 +58,12 @@ auth:
   bootstrap:
     username: ${AUTH_BOOTSTRAP_USERNAME:}
     password: ${AUTH_BOOTSTRAP_PASSWORD:}
+    email: ${AUTH_BOOTSTRAP_EMAIL:}
+  registration:
+    enabled: ${AUTH_REGISTRATION_ENABLED:false}
+    max-attempts: ${AUTH_REGISTRATION_MAX_ATTEMPTS:10}
+  verification:
+    from: ${AUTH_VERIFICATION_FROM:no-reply@cdc-kafka.local}
   login:
     max-attempts: ${AUTH_LOGIN_MAX_ATTEMPTS:10}
     max-peers: ${AUTH_LOGIN_MAX_PEERS:10000}

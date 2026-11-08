@@ -17,6 +17,7 @@ if [[ ! -f secrets/auth.env ]]; then
   {
     printf 'JWT_ISSUER=https://cdc-kafka.local/auth\nJWT_AUDIENCE=transport-api\n'
     printf 'AUTH_BOOTSTRAP_USERNAME=admin\nAUTH_BOOTSTRAP_PASSWORD=%s\n' "$(openssl rand -hex 24)"
+    printf 'AUTH_BOOTSTRAP_EMAIL=admin@cdc-kafka.local\n'
     printf 'MONITORING_PASSWORD=%s\n' "$monitoring_password"
   } > secrets/auth.env
   printf '%s' "$monitoring_password" > secrets/monitoring-password

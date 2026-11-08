@@ -8,7 +8,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-@RestControllerAdvice(assignableTypes = {AuthController.class, SessionController.class})
+@RestControllerAdvice(
+        assignableTypes = {
+            AuthController.class,
+            SessionController.class,
+            BrowserAuthController.class
+        })
 public class AuthExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<?> credentials(AuthenticationException exception) {
@@ -45,7 +50,8 @@ public class AuthExceptionHandler {
 
     @ExceptionHandler({
         org.springframework.dao.DataAccessException.class,
-        org.springframework.transaction.TransactionException.class
+        org.springframework.transaction.TransactionException.class,
+        org.springframework.security.oauth2.jwt.JwtEncodingException.class
     })
     public ResponseEntity<?> database(RuntimeException exception) {
         return unavailable();

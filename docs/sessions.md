@@ -1,6 +1,6 @@
 # Session invalidation and logout (task 3A)
 
-Access tokens still expire after 15 minutes by default. There are no refresh tokens, server-side session rows or token blacklist. This task adds durable account-wide invalidation and a current-account endpoint; password recovery/change remain PR 3B.
+Access tokens still expire after 15 minutes by default. API login remains access-token-only, without a token blacklist. Optional [browser refresh sessions](browser-sessions.md) add hashed refresh-token rows and share this account-wide invalidation counter. Password recovery/change remain PR 3B.
 
 ## API
 

@@ -39,8 +39,12 @@ Login now requires a verified email, including for existing accounts and the boo
 | `AUTH_LOGIN_MAX_ATTEMPTS` | Login attempts per peer IP per window; default 10 |
 | `AUTH_LOGIN_WINDOW` | ISO-8601 window duration; default `PT1M` |
 | `AUTH_LOGIN_MAX_PEERS` | Maximum tracked IPs; default 10000; capacity exhaustion fails closed |
+| `AUTH_BROWSER_ENABLED` | Rotating browser refresh sessions; default false; requires `JWT_TTL=PT15M` |
+| `AUTH_BROWSER_ALLOWED_ORIGINS` | Comma-separated exact HTTPS frontend origins, without paths; required when browser auth is enabled |
+| `AUTH_BROWSER_MAX_ATTEMPTS` | Combined refresh/browser-logout attempts per peer per login window; default 60 |
+| `AUTH_BROWSER_CLEANUP_DELAY_MS` | Expired refresh-token cleanup interval; default 3600000 (one hour) |
 
-Startup fails for absent, malformed, mismatched or weak RSA keys. Only RS256 bearer tokens are accepted, with mandatory expiry, issued-at, UUID subject, issuer and audience checks. Spring Security applies its default timestamp clock-skew tolerance (60 seconds). Every bearer request now checks the account’s current authentication version, role, enabled status and verified email in PostgreSQL. Logout invalidates all sessions; database failures deny access with 503. There are no refresh tokens; log in again after expiry or invalidation. See [sessions and logout rollout](docs/sessions.md).
+Startup fails for absent, malformed, mismatched or weak RSA keys. Only RS256 bearer tokens are accepted, with mandatory expiry, issued-at, UUID subject, issuer and audience checks. Spring Security applies its default timestamp clock-skew tolerance (60 seconds). Every bearer request now checks the account’s current authentication version, role, enabled status and verified email in PostgreSQL. Logout invalidates all sessions; database failures deny access with 503. API clients log in again after expiry or invalidation; optional [browser refresh sessions](docs/browser-sessions.md) rotate secure cookies for at most seven days. See [sessions and logout rollout](docs/sessions.md).
 
 Login throttling is bounded, in-memory and per process, keyed by the actual peer IP. It counts successful and failed attempts, returns 429 with Retry-After, and does not trust client-supplied forwarded headers. Behind a proxy, peers may share a limit; apply per-client throttling at a trusted ingress. Multiple replicas need a shared limiter or ingress enforcement. Restarting a process resets its counters.
 

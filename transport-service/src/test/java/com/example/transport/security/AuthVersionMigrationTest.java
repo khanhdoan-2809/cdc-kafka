@@ -23,7 +23,7 @@ class AuthVersionMigrationTest {
         var user = UUID.randomUUID();
         jdbc.update(
                 "insert into auth_user(id,username,password_hash,role,enabled,email,email_verified)"
-                    + " values (?,'legacy','old-hash','USER',true,'legacy@test.invalid',true)",
+                        + " values (?,'legacy','old-hash','USER',true,'legacy@test.invalid',true)",
                 user);
         Long transport =
                 jdbc.queryForObject(
@@ -34,7 +34,11 @@ class AuthVersionMigrationTest {
                         Long.class);
         jdbc.update("insert into transport_assignment values (?,?)", transport, user);
         var flyway =
-                Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
+                Flyway.configure()
+                        .dataSource(source)
+                        .locations("classpath:db/migration")
+                        .target("7")
+                        .load();
         flyway.migrate();
         flyway.validate();
         assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
@@ -52,7 +56,7 @@ class AuthVersionMigrationTest {
         assertThat(
                         jdbc.queryForList(
                                 "select tablename from pg_publication_tables where"
-                                    + " pubname='transport_cdc_publication'",
+                                        + " pubname='transport_cdc_publication'",
                                 String.class))
                 .containsExactlyInAnyOrder("transport", "job", "container");
         assertThat(

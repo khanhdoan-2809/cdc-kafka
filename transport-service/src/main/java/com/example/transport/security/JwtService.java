@@ -35,8 +35,22 @@ public class JwtService {
 
     public String generateToken(
             String accountId, String username, List<String> roles, long authVersion) {
+        return generateTokenUntil(accountId, username, roles, authVersion, Instant.MAX)
+                .getTokenValue();
+    }
+
+    public Jwt generateTokenUntil(
+            String accountId,
+            String username,
+            List<String> roles,
+            long authVersion,
+            Instant deadline) {
         if (authVersion < 0) throw new IllegalArgumentException("Invalid authentication version");
-        Instant now = Instant.now();
+        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        Instant expiry = now.plus(ttl).isBefore(deadline) ? now.plus(ttl) : deadline;
+        if (!expiry.isAfter(now))
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "Expired session");
         var claims =
                 JwtClaimsSet.builder()
                         .subject(accountId)
@@ -48,12 +62,11 @@ public class JwtService {
                         .id(UUID.randomUUID().toString())
                         .issuedAt(now)
                         .notBefore(now)
-                        .expiresAt(now.plus(ttl))
+                        .expiresAt(expiry)
                         .build();
         return encoder.encode(
-                        JwtEncoderParameters.from(
-                                JwsHeader.with(SignatureAlgorithm.RS256).build(), claims))
-                .getTokenValue();
+                JwtEncoderParameters.from(
+                        JwsHeader.with(SignatureAlgorithm.RS256).build(), claims));
     }
 
     public long expiresIn() {

@@ -51,6 +51,14 @@ class AuthenticationIntegrationTest {
     @Autowired JwtEncoder encoder;
     @Autowired JwtService tokens;
     @Autowired TransportRepository transports;
+
+    @Test
+    void browserFlowIsDisabledByDefault() throws Exception {
+        mvc.perform(get("/api/auth/csrf").secure(true)).andExpect(status().isNotFound());
+        for (String path : java.util.List.of("browser-login", "refresh", "browser-logout"))
+            mvc.perform(post("/api/auth/" + path).secure(true)).andExpect(status().isNotFound());
+    }
+
     Account user;
     Account admin;
     static Path keys;

@@ -1,6 +1,7 @@
 package com.example.transport.config;
 
 import com.example.transport.security.AccountSessionStore;
+import com.example.transport.security.BrowserAuthSettings;
 import com.example.transport.security.LiveAccountFilter;
 import com.example.transport.security.LoginRateLimitFilter;
 import com.example.transport.web.context.AuthenticatedActorFilter;
@@ -41,9 +42,10 @@ public class SecurityConfig {
     private final AccessDeniedHandler accessDeniedHandler;
 
     @Bean
-    @org.springframework.core.annotation.Order(2)
+    @org.springframework.core.annotation.Order(3)
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
+            CorsConfigurationSource corsConfigurationSource,
             AccountSessionStore accounts,
             ObjectMapper json,
             @Value("${auth.login.max-attempts:10}") int maxAttempts,
@@ -56,7 +58,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
 
                 // 2. Cấu hình CORS (nếu cần)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
 
                 // 3. Stateless session (không tạo session)
                 .sessionManagement(
@@ -140,9 +142,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(BrowserAuthSettings browser) {
         var configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
+        configuration.setAllowedOrigins(
+                browser.enabled() ? browser.origins() : Arrays.asList("http://localhost:3000"));
         configuration.setAllowedMethods(
                 Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
